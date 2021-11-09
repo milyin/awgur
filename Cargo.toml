@@ -1,0 +1,25 @@
+[package]
+name = "awgur"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async_object = { git = "https://github.com/milyin/async-object" }
+futures = "0.3.17"
+thiserror = "1.0"
+float-ord = "0.3.2"
+
+[dependencies.windows]
+version = "0.25.0"
+features = [
+    "Foundation_Collections",
+    "Foundation_Numerics",
+    "Graphics",
+    "System",
+    "UI_Composition_Desktop",
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_System_WinRT",
+    "Win32_UI_WindowsAndMessaging",
+]
