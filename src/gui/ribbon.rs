@@ -1,16 +1,16 @@
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 use async_object::{Keeper, Tag};
+use futures::{executor::ThreadPool, StreamExt};
 use windows::{
     Foundation::Numerics::{Vector2, Vector3},
     UI::Composition::ContainerVisual,
 };
-use futures::StreamExt;
 
+use super::{FrameTag, SlotKeeper, SlotPlug, SlotTag};
 use crate::{
-    slot::SlotPlug,
-    slot_event::{MouseLeftPressed, MouseLeftPressedFocused},
-    FrameTag, ReceiveSlotEvent, SendSlotEvent, SlotKeeper, SlotSize, SlotTag,
+    event::{MouseLeftPressed, MouseLeftPressedFocused, ReceiveSlotEvent, SendSlotEvent, SlotSize},
+    unwrap_err,
 };
 
 #[derive(PartialEq, Clone, Copy)]
@@ -205,12 +205,13 @@ pub struct RibbonKeeper(Keeper<Ribbon>);
 
 impl RibbonKeeper {
     pub fn new(
+        pool: ThreadPool,
         frame: FrameTag,
         slot: SlotTag,
         orientation: RibbonOrientation,
     ) -> crate::Result<Self> {
         let keeper = Self(Keeper::new(Ribbon::new(frame, slot, orientation)?));
-        keeper.spawn_event_handlers()?;
+        keeper.spawn_event_handlers(pool)?;
         Ok(keeper)
     }
     pub fn tag(&self) -> RibbonTag {
@@ -222,30 +223,33 @@ impl RibbonKeeper {
     pub fn get_mut(&self) -> RwLockWriteGuard<'_, Ribbon> {
         self.0.get_mut()
     }
-    fn spawn_event_handlers(&self) -> crate::Result<()> {
-        let frame = self.0.get().frame.clone();
+    fn spawn_event_handlers(&self, pool: ThreadPool) -> crate::Result<()> {
         let slot = self.0.get().slot.tag();
         let ribbon = self.tag();
-        {
+        pool.spawn_ok({
             let slot = slot.clone();
             let mut ribbon = ribbon.clone();
-            frame.thread_spawn(async move {
+            unwrap_err(async move {
                 while let Some(size) = slot.on_size().next().await {
                     ribbon.send_size(size)?
                 }
                 Ok(())
-            })?;
-        }
-        {
+            })
+        });
+
+        pool.spawn_ok({
             let slot = slot.clone();
             let mut ribbon = ribbon.clone();
-            frame.thread_spawn(async move {
-                while let Some(event) = slot.on_mouse_left_pressed().next().await {
-                    ribbon.send_mouse_left_pressed(event)?
+            unwrap_err({
+                async move {
+                    while let Some(event) = slot.on_mouse_left_pressed().next().await {
+                        ribbon.send_mouse_left_pressed(event)?
+                    }
+                    Ok(())
                 }
-                Ok(())
-            })?;
-        }
+            })
+        });
+
         Ok(())
     }
 }

@@ -1,17 +1,13 @@
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use async_object::{Keeper, Tag};
-use futures::{executor::ThreadPool, Future};
 use windows::UI::Composition::{Compositor, ContainerVisual};
 
-use crate::{
-    slot::{SlotKeeper, SlotTag},
-    slot_event::{MouseLeftPressed, MouseLeftPressedFocused, SendSlotEvent},
-    SlotSize,
-};
+use crate::event::{MouseLeftPressed, MouseLeftPressedFocused, SendSlotEvent, SlotSize};
+
+use super::{SlotKeeper, SlotTag};
 
 pub struct FrameShared {
-    thread_pool: ThreadPool,
     compositor: Compositor,
     frame_visual: ContainerVisual,
 }
@@ -21,11 +17,10 @@ pub struct Frame {
 }
 
 impl Frame {
-    fn new(thread_pool: ThreadPool) -> crate::Result<Self> {
+    fn new() -> crate::Result<Self> {
         let compositor = Compositor::new()?;
         let frame_visual = compositor.CreateContainerVisual()?;
         let shared = Arc::new(RwLock::new(FrameShared {
-            thread_pool,
             compositor,
             frame_visual,
         }));
@@ -105,8 +100,8 @@ impl SendSlotEvent for Frame {
 pub struct FrameKeeper(Keeper<Frame, FrameShared>);
 
 impl FrameKeeper {
-    pub fn new(thread_pool: ThreadPool) -> crate::Result<Self> {
-        let frame = Frame::new(thread_pool)?;
+    pub fn new() -> crate::Result<Self> {
+        let frame = Frame::new()?;
         let shared = frame.shared();
         let keeper = Keeper::new_with_shared(frame, shared);
         Ok(Self(keeper))
@@ -131,18 +126,6 @@ impl FrameTag {
     }
     pub fn frame_visual(&self) -> crate::Result<ContainerVisual> {
         Ok(self.0.read_shared(|v| v.frame_visual.clone())?)
-    }
-    pub fn thread_pool(&self) -> crate::Result<ThreadPool> {
-        Ok(self.0.read_shared(|v| v.thread_pool.clone())?)
-    }
-    pub fn thread_spawn<Fut>(&self, future: Fut) -> crate::Result<()>
-    where
-        Fut: Future<Output = crate::Result<()>> + Send + 'static,
-    {
-        self.thread_pool()?.spawn_ok(async {
-            future.await.unwrap() // TODO: store error somethere (thread_local? special inrerface in tag?)
-        });
-        Ok(())
     }
     pub fn open_slot(&self) -> crate::Result<SlotTag> {
         self.0.call_mut(|frame| frame.open_slot())?

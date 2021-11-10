@@ -4,7 +4,7 @@ use async_object::{EventStream, Keeper, Tag};
 use futures::StreamExt;
 use windows::UI::Composition::{ContainerVisual, Visual};
 
-use crate::slot_event::{
+use crate::event::{
     MouseLeftPressed, MouseLeftPressedFocused, ReceiveSlotEvent, SendSlotEvent, SlotSize,
 };
 

@@ -1,8 +1,10 @@
-use std::sync::{RwLockReadGuard, RwLockWriteGuard};
+use std::{
+    sync::{RwLockReadGuard, RwLockWriteGuard},
+};
 
 use async_object::{Keeper, Tag};
 use float_ord::FloatOrd;
-use futures::StreamExt;
+use futures::{executor::ThreadPool, StreamExt};
 use windows::{
     Foundation::Numerics::Vector2,
     UI::{
@@ -11,7 +13,8 @@ use windows::{
     },
 };
 
-use crate::{slot::SlotPlug, FrameTag, ReceiveSlotEvent, SlotTag};
+use crate::gui::{FrameTag, SlotPlug, SlotTag};
+use crate::{event::ReceiveSlotEvent, unwrap_err};
 
 pub struct Background {
     frame: FrameTag,
@@ -91,6 +94,7 @@ pub struct BackgroundKeeper(Keeper<Background>);
 
 impl BackgroundKeeper {
     pub fn new(
+        pool: ThreadPool,
         frame: FrameTag,
         slot: SlotTag,
         color: Color,
@@ -98,7 +102,7 @@ impl BackgroundKeeper {
     ) -> crate::Result<Self> {
         let keeper = Keeper::new(Background::new(frame, slot, color, round_corners)?);
         let keeper = Self(keeper);
-        keeper.spawn_event_handlers()?;
+        keeper.spawn_event_handlers(pool)?;
         Ok(keeper)
     }
     pub fn tag(&self) -> BackgroundTag {
@@ -110,16 +114,17 @@ impl BackgroundKeeper {
     pub fn get_mut(&self) -> RwLockWriteGuard<'_, Background> {
         self.0.get_mut()
     }
-    fn spawn_event_handlers(&self) -> crate::Result<()> {
+    fn spawn_event_handlers(&self, pool: ThreadPool) -> crate::Result<()> {
         let tag = self.tag();
-        let frame = self.get().frame.clone();
         let slot = self.get().slot.tag();
-        frame.thread_spawn(async move {
+        let func = unwrap_err(async move {
             while let Some(size) = slot.on_size().next().await {
                 tag.set_size(size.0)?;
             }
             Ok(())
-        })
+        });
+        pool.spawn_ok(func);
+        Ok(())
     }
 }
 #[derive(Clone, PartialEq)]

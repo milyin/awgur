@@ -1,21 +1,8 @@
-mod background;
-mod frame;
-mod ribbon;
-mod slot;
-// mod text;
-mod slot_event;
+pub mod event;
+pub mod gui;
+pub mod window;
 
-pub use background::{Background, BackgroundKeeper, BackgroundTag};
-pub use frame::{Frame, FrameKeeper, FrameTag};
-pub use ribbon::{CellLimit, Ribbon, RibbonKeeper, RibbonOrientation, RibbonTag};
-pub use slot::{Slot, SlotKeeper, SlotTag};
-// pub use text::{Text, TextKeeper, TextTag};
-pub use slot_event::{
-    MouseLeftPressed, MouseLeftPressedFocused, ReceiveSlotEvent, SendSlotEvent, SlotSize,
-};
-
-use futures::task::SpawnError;
-// pub use ribbon::{Ribbon, RibbonKeeper, RibbonTag};
+use futures::{task::SpawnError, Future};
 use thiserror::Error;
 use windows::runtime;
 
@@ -48,4 +35,8 @@ impl From<SpawnError> for Error {
     fn from(e: SpawnError) -> Self {
         Error::Spawn(e)
     }
+}
+
+pub fn unwrap_err(future: impl Future<Output = crate::Result<()>>) -> impl Future<Output = ()> {
+    async { (future.await).unwrap() }
 }
