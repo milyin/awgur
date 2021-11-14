@@ -1,12 +1,10 @@
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
-
-use async_object::{EventStream, Keeper, Tag};
-use futures::StreamExt;
-use windows::UI::Composition::{ContainerVisual, Visual};
-
 use crate::event::{
     MouseLeftPressed, MouseLeftPressedFocused, ReceiveSlotEvent, SendSlotEvent, SlotSize,
 };
+use async_object::{EventStream, Keeper, Tag};
+use futures::StreamExt;
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use windows::UI::Composition::{ContainerVisual, Visual};
 
 #[derive(Clone)]
 pub struct Slot {
@@ -22,7 +20,8 @@ impl Slot {
         })
     }
     pub fn plug(&mut self, visual: Visual) -> crate::Result<SlotPlug> {
-        visual.SetSize(self.container.Size()?)?;
+        let size = self.container.Size()?;
+        visual.SetSize(size)?;
         self.container.Children()?.InsertAtTop(visual.clone())?;
         Ok(SlotPlug {
             tag: self.tag.clone(),

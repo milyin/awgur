@@ -1,13 +1,16 @@
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 use async_object::{Keeper, Tag};
-use futures::{executor::ThreadPool, StreamExt};
+use futures::{
+    task::{Spawn, SpawnExt},
+    StreamExt,
+};
 use windows::{
     Foundation::Numerics::{Vector2, Vector3},
-    UI::Composition::ContainerVisual,
+    UI::Composition::{Compositor, ContainerVisual},
 };
 
-use super::{FrameTag, SlotKeeper, SlotPlug, SlotTag};
+use super::{SlotKeeper, SlotPlug, SlotTag};
 use crate::{
     event::{MouseLeftPressed, MouseLeftPressedFocused, ReceiveSlotEvent, SendSlotEvent, SlotSize},
     unwrap_err,
@@ -75,7 +78,7 @@ impl Cell {
 }
 
 pub struct Ribbon {
-    frame: FrameTag,
+    compositor: Compositor,
     slot: SlotPlug,
     container: ContainerVisual,
     orientation: RibbonOrientation,
@@ -84,14 +87,14 @@ pub struct Ribbon {
 
 impl Ribbon {
     pub fn new(
-        frame: FrameTag,
+        compositor: Compositor,
         slot: SlotTag,
         orientation: RibbonOrientation,
     ) -> crate::Result<Self> {
-        let container = frame.compositor()?.CreateContainerVisual()?;
+        let container = compositor.CreateContainerVisual()?;
         let slot = slot.plug(container.clone().into())?;
         Ok(Self {
-            frame,
+            compositor,
             slot,
             container,
             orientation,
@@ -100,8 +103,7 @@ impl Ribbon {
     }
 
     pub fn add_cell(&mut self, limit: CellLimit) -> crate::Result<SlotTag> {
-        let compositor = self.frame.compositor()?;
-        let container = compositor.CreateContainerVisual()?;
+        let container = self.compositor.CreateContainerVisual()?;
         let slot_keeper = SlotKeeper::new(container.clone())?;
         self.container.Children()?.InsertAtTop(container.clone())?;
         let slot = slot_keeper.tag();
@@ -205,13 +207,13 @@ pub struct RibbonKeeper(Keeper<Ribbon>);
 
 impl RibbonKeeper {
     pub fn new(
-        pool: ThreadPool,
-        frame: FrameTag,
+        spawner: impl Spawn,
+        compositor: Compositor,
         slot: SlotTag,
         orientation: RibbonOrientation,
     ) -> crate::Result<Self> {
-        let keeper = Self(Keeper::new(Ribbon::new(frame, slot, orientation)?));
-        keeper.spawn_event_handlers(pool)?;
+        let keeper = Self(Keeper::new(Ribbon::new(compositor, slot, orientation)?));
+        keeper.spawn_event_handlers(spawner)?;
         Ok(keeper)
     }
     pub fn tag(&self) -> RibbonTag {
@@ -223,10 +225,10 @@ impl RibbonKeeper {
     pub fn get_mut(&self) -> RwLockWriteGuard<'_, Ribbon> {
         self.0.get_mut()
     }
-    fn spawn_event_handlers(&self, pool: ThreadPool) -> crate::Result<()> {
+    fn spawn_event_handlers(&self, spawner: impl Spawn) -> crate::Result<()> {
         let slot = self.0.get().slot.tag();
         let ribbon = self.tag();
-        pool.spawn_ok({
+        spawner.spawn({
             let slot = slot.clone();
             let mut ribbon = ribbon.clone();
             unwrap_err(async move {
@@ -235,9 +237,9 @@ impl RibbonKeeper {
                 }
                 Ok(())
             })
-        });
+        })?;
 
-        pool.spawn_ok({
+        spawner.spawn({
             let slot = slot.clone();
             let mut ribbon = ribbon.clone();
             unwrap_err({
@@ -248,7 +250,7 @@ impl RibbonKeeper {
                     Ok(())
                 }
             })
-        });
+        })?;
 
         Ok(())
     }

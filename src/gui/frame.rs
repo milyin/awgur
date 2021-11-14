@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 use async_object::{Keeper, Tag};
 use windows::UI::Composition::{Compositor, ContainerVisual};
@@ -7,46 +7,25 @@ use crate::event::{MouseLeftPressed, MouseLeftPressedFocused, SendSlotEvent, Slo
 
 use super::{SlotKeeper, SlotTag};
 
-pub struct FrameShared {
-    compositor: Compositor,
-    frame_visual: ContainerVisual,
-}
 pub struct Frame {
-    shared: Arc<RwLock<FrameShared>>,
     slots: Vec<SlotKeeper>,
+    compositor: Compositor,
+    root_visual: ContainerVisual,
 }
 
 impl Frame {
-    fn new() -> crate::Result<Self> {
-        let compositor = Compositor::new()?;
-        let frame_visual = compositor.CreateContainerVisual()?;
-        let shared = Arc::new(RwLock::new(FrameShared {
-            compositor,
-            frame_visual,
-        }));
+    fn new(compositor: Compositor, root_visual: ContainerVisual) -> crate::Result<Self> {
         Ok(Self {
-            shared,
             slots: Vec::new(),
+            compositor,
+            root_visual,
         })
-    }
-    fn shared(&self) -> Arc<RwLock<FrameShared>> {
-        self.shared.clone()
-    }
-    fn compositor(&self) -> Compositor {
-        self.shared.read().unwrap().compositor.clone()
-    }
-    fn frame_visual(&self) -> ContainerVisual {
-        self.shared.read().unwrap().frame_visual.clone()
     }
 
     fn open_slot(&mut self) -> crate::Result<SlotTag> {
-        let compositor = self.compositor();
-        let container = compositor.CreateContainerVisual()?;
-        container.SetSize(self.frame_visual().Size()?)?;
-        self.shared
-            .read()
-            .unwrap()
-            .frame_visual
+        let container = self.compositor.CreateContainerVisual()?;
+        container.SetSize(self.root_visual.Size()?)?;
+        self.root_visual
             .Children()?
             .InsertAtTop(container.clone())?;
         let slot_keeper = SlotKeeper::new(container)?;
@@ -58,12 +37,7 @@ impl Frame {
     pub fn close_slot(&mut self, slot: SlotTag) -> crate::Result<()> {
         if let Some(index) = self.slots.iter().position(|v| v.tag() == slot) {
             let slot = self.slots.remove(index);
-            self.shared
-                .read()
-                .unwrap()
-                .frame_visual
-                .Children()?
-                .Remove(slot.container()?)?;
+            self.root_visual.Children()?.Remove(slot.container()?)?;
         }
         Ok(())
     }
@@ -71,7 +45,7 @@ impl Frame {
 
 impl SendSlotEvent for Frame {
     fn send_size(&mut self, size: SlotSize) -> crate::Result<()> {
-        self.frame_visual().SetSize(size.0)?;
+        self.root_visual.SetSize(size.0)?;
         for slot in &mut self.slots {
             slot.send_size(size.clone())?;
         }
@@ -97,17 +71,16 @@ impl SendSlotEvent for Frame {
 }
 
 #[derive(Clone)]
-pub struct FrameKeeper(Keeper<Frame, FrameShared>);
+pub struct KFrame(Keeper<Frame>);
 
-impl FrameKeeper {
-    pub fn new() -> crate::Result<Self> {
-        let frame = Frame::new()?;
-        let shared = frame.shared();
-        let keeper = Keeper::new_with_shared(frame, shared);
+impl KFrame {
+    pub fn new(compositor: Compositor, root_visual: ContainerVisual) -> crate::Result<Self> {
+        let frame = Frame::new(compositor, root_visual)?;
+        let keeper = Keeper::new(frame);
         Ok(Self(keeper))
     }
-    pub fn tag(&self) -> FrameTag {
-        FrameTag(self.0.tag())
+    pub fn tag(&self) -> TFrame {
+        TFrame(self.0.tag())
     }
     pub fn get(&self) -> RwLockReadGuard<'_, Frame> {
         self.0.get()
@@ -118,15 +91,9 @@ impl FrameKeeper {
 }
 
 #[derive(Clone, PartialEq)]
-pub struct FrameTag(Tag<Frame, FrameShared>);
+pub struct TFrame(Tag<Frame>);
 
-impl FrameTag {
-    pub fn compositor(&self) -> crate::Result<Compositor> {
-        Ok(self.0.read_shared(|v| v.compositor.clone())?)
-    }
-    pub fn frame_visual(&self) -> crate::Result<ContainerVisual> {
-        Ok(self.0.read_shared(|v| v.frame_visual.clone())?)
-    }
+impl TFrame {
     pub fn open_slot(&self) -> crate::Result<SlotTag> {
         self.0.call_mut(|frame| frame.open_slot())?
     }
@@ -135,7 +102,7 @@ impl FrameTag {
     }
 }
 
-impl SendSlotEvent for FrameTag {
+impl SendSlotEvent for TFrame {
     fn send_size(&mut self, size: SlotSize) -> crate::Result<()> {
         self.0.call_mut(|frame| frame.send_size(size))?
     }

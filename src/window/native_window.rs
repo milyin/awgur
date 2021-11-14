@@ -1,6 +1,5 @@
 use std::sync::Once;
 
-use futures::executor::LocalPool;
 use windows::{
     runtime::{self, Handle, Interface},
     Foundation::Numerics::Vector2,
@@ -16,27 +15,29 @@ use windows::{
             WM_TIMER, WNDCLASSW, WS_EX_NOREDIRECTIONBITMAP, WS_OVERLAPPEDWINDOW,
         },
     },
-    UI::Composition::{Compositor, Desktop::DesktopWindowTarget},
+    UI::Composition::{Compositor, ContainerVisual, Desktop::DesktopWindowTarget},
 };
 
-use crate::{event::{MouseLeftPressed, MouseLeftPressedFocused, SendSlotEvent, SlotSize}, window::wide_string::ToWide};
+use crate::{
+    event::{MouseLeftPressed, MouseLeftPressedFocused, SendSlotEvent, SlotSize},
+    gui::{SlotKeeper, SlotTag},
+    window::wide_string::ToWide,
+};
+
 static REGISTER_WINDOW_CLASS: Once = Once::new();
 static WINDOW_CLASS_NAME: &str = "awgur.Window";
 
 pub struct Window {
     handle: HWND,
-    event_dst: Box<dyn SendSlotEvent>,
-    pool: Option<LocalPool>,
+    target: Option<DesktopWindowTarget>,
     mouse_pos: Vector2,
+    compositor: Compositor,
+    root_visual:ContainerVisual,
+    kslot: SlotKeeper,
 }
 
 impl Window {
-    pub fn new(
-        title: &str,
-        width: u32,
-        height: u32,
-        event_dst: impl SendSlotEvent + 'static,
-    ) -> runtime::Result<Box<Self>> {
+    pub fn new(title: &str, width: u32, height: u32) -> crate::Result<Box<Self>> {
         let class_name = WINDOW_CLASS_NAME.to_wide();
         let instance = unsafe { GetModuleHandleW(PWSTR(std::ptr::null_mut())).ok()? };
         REGISTER_WINDOW_CLASS.call_once(|| {
@@ -67,13 +68,19 @@ impl Window {
             }
             (rect.right - rect.left, rect.bottom - rect.top)
         };
-        let event_dst = Box::new(event_dst);
+        let compositor = Compositor::new()?;
+
         let mouse_pos = Vector2::default();
+        let root_visual = compositor.CreateContainerVisual()?;
+        root_visual.SetSize(Vector2 { X: width as f32, Y: height as f32 })?;
+        let kslot = SlotKeeper::new(root_visual.clone())?;
         let mut result = Box::new(Self {
             handle: HWND(0),
-            event_dst,
-            pool: None,
+            target: None,
             mouse_pos,
+            compositor,
+            root_visual,
+            kslot,
         });
 
         let title = title.to_wide();
@@ -94,13 +101,14 @@ impl Window {
             )
             .ok()?
         };
+
+        let compositor_desktop: ICompositorDesktopInterop = result.compositor().cast()?;
+        let target = unsafe { compositor_desktop.CreateDesktopWindowTarget(result.handle(), true)? };
+        target.SetRoot(result.root_visual())?;
+        result.target = Some(target);
+
         unsafe { ShowWindow(&window, SW_SHOW) };
-
         Ok(result)
-    }
-
-    pub fn set_local_pool(&mut self, pool: LocalPool) {
-        self.pool = Some(pool)
     }
 
     pub fn size(&self) -> crate::Result<SizeInt32> {
@@ -109,15 +117,6 @@ impl Window {
 
     pub fn handle(&self) -> HWND {
         self.handle
-    }
-
-    pub fn create_window_target(
-        &self,
-        compositor: &Compositor,
-        is_topmost: bool,
-    ) -> crate::Result<DesktopWindowTarget> {
-        let compositor_desktop: ICompositorDesktopInterop = compositor.cast()?;
-        Ok(unsafe { compositor_desktop.CreateDesktopWindowTarget(self.handle(), is_topmost) }?)
     }
 
     fn message_handler(&mut self, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -141,13 +140,13 @@ impl Window {
                     X: new_size.Width as f32,
                     Y: new_size.Height as f32,
                 };
-                self.event_dst.send_size(SlotSize(new_size)).unwrap();
+                self.kslot.send_size(SlotSize(new_size)).unwrap();
             }
             WM_LBUTTONDOWN => {
-                self.event_dst
+                self.kslot
                     .send_mouse_left_pressed(MouseLeftPressed(self.mouse_pos))
                     .unwrap();
-                self.event_dst
+                self.kslot
                     .send_mouse_left_pressed_focused(MouseLeftPressedFocused(self.mouse_pos))
                     .unwrap();
             }
@@ -183,6 +182,20 @@ impl Window {
             }
         }
         DefWindowProcW(window, message, wparam, lparam)
+    }
+
+    /// Get a reference to the window's compositor.
+    pub fn compositor(&self) -> &Compositor {
+        &self.compositor
+    }
+
+    /// Get a reference to the window's root visual.
+    pub fn root_visual(&self) -> &ContainerVisual {
+        &self.root_visual
+    }
+
+    pub fn slot(&self) -> SlotTag {
+        self.kslot.tag()
     }
 }
 

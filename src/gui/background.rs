@@ -1,23 +1,24 @@
-use std::{
-    sync::{RwLockReadGuard, RwLockWriteGuard},
-};
+use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 use async_object::{Keeper, Tag};
 use float_ord::FloatOrd;
-use futures::{executor::ThreadPool, StreamExt};
+use futures::{
+    task::{Spawn, SpawnExt},
+    StreamExt,
+};
 use windows::{
     Foundation::Numerics::Vector2,
     UI::{
         Color,
-        Composition::{CompositionShape, ShapeVisual},
+        Composition::{CompositionShape, Compositor, ShapeVisual},
     },
 };
 
-use crate::gui::{FrameTag, SlotPlug, SlotTag};
+use crate::gui::{SlotPlug, SlotTag};
 use crate::{event::ReceiveSlotEvent, unwrap_err};
 
 pub struct Background {
-    frame: FrameTag,
+    compositor: Compositor,
     slot: SlotPlug,
     shape: ShapeVisual,
     round_corners: bool,
@@ -25,17 +26,11 @@ pub struct Background {
 }
 
 impl Background {
-    fn new(
-        frame: FrameTag,
-        slot: SlotTag,
-        color: Color,
-        round_corners: bool,
-    ) -> crate::Result<Self> {
-        let compositor = frame.compositor()?;
+    fn new(compositor: Compositor, slot: SlotTag, color: Color, round_corners: bool) -> crate::Result<Self> {
         let shape = compositor.CreateShapeVisual()?;
         let slot = slot.plug(shape.clone().into())?;
         let background = Self {
-            frame,
+            compositor,
             slot,
             shape,
             color,
@@ -65,9 +60,8 @@ impl Background {
         Ok(())
     }
     fn create_background_shape(&self) -> crate::Result<CompositionShape> {
-        let compositor = self.frame.compositor()?;
-        let container_shape = compositor.CreateContainerShape()?;
-        let rect_geometry = compositor.CreateRoundedRectangleGeometry()?;
+        let container_shape = self.compositor.CreateContainerShape()?;
+        let rect_geometry = self.compositor.CreateRoundedRectangleGeometry()?;
         rect_geometry.SetSize(self.shape.Size()?)?;
         if self.round_corners {
             let size = rect_geometry.Size()?;
@@ -79,8 +73,8 @@ impl Background {
         } else {
             rect_geometry.SetCornerRadius(Vector2 { X: 0., Y: 0. })?;
         }
-        let brush = compositor.CreateColorBrushWithColor(self.color.clone())?;
-        let rect = compositor.CreateSpriteShapeWithGeometry(rect_geometry)?;
+        let brush = self.compositor.CreateColorBrushWithColor(self.color.clone())?;
+        let rect = self.compositor.CreateSpriteShapeWithGeometry(rect_geometry)?;
         rect.SetFillBrush(brush)?;
         rect.SetOffset(Vector2 { X: 0., Y: 0. })?;
         container_shape.Shapes()?.Append(rect)?;
@@ -94,15 +88,15 @@ pub struct BackgroundKeeper(Keeper<Background>);
 
 impl BackgroundKeeper {
     pub fn new(
-        pool: ThreadPool,
-        frame: FrameTag,
+        spawner: impl Spawn,
+        compositor: Compositor,
         slot: SlotTag,
         color: Color,
         round_corners: bool,
     ) -> crate::Result<Self> {
-        let keeper = Keeper::new(Background::new(frame, slot, color, round_corners)?);
+        let keeper = Keeper::new(Background::new(compositor, slot, color, round_corners)?);
         let keeper = Self(keeper);
-        keeper.spawn_event_handlers(pool)?;
+        keeper.spawn_event_handlers(spawner)?;
         Ok(keeper)
     }
     pub fn tag(&self) -> BackgroundTag {
@@ -114,7 +108,7 @@ impl BackgroundKeeper {
     pub fn get_mut(&self) -> RwLockWriteGuard<'_, Background> {
         self.0.get_mut()
     }
-    fn spawn_event_handlers(&self, pool: ThreadPool) -> crate::Result<()> {
+    fn spawn_event_handlers(&self, spawner: impl Spawn) -> crate::Result<()> {
         let tag = self.tag();
         let slot = self.get().slot.tag();
         let func = unwrap_err(async move {
@@ -123,7 +117,7 @@ impl BackgroundKeeper {
             }
             Ok(())
         });
-        pool.spawn_ok(func);
+        spawner.spawn(func)?;
         Ok(())
     }
 }
