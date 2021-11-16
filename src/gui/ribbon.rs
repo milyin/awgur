@@ -1,20 +1,14 @@
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 use async_object::{Keeper, Tag};
-use futures::{
-    task::{Spawn, SpawnExt},
-    StreamExt,
-};
+use futures::task::Spawn;
 use windows::{
     Foundation::Numerics::{Vector2, Vector3},
     UI::Composition::{Compositor, ContainerVisual},
 };
+use winit::{dpi::PhysicalSize, event::WindowEvent};
 
-use super::{SlotKeeper, SlotPlug, SlotTag};
-use crate::{
-    event::{MouseLeftPressed, MouseLeftPressedFocused, ReceiveSlotEvent, SendSlotEvent, SlotSize},
-    unwrap_err,
-};
+use super::{spawn_translate_window_events, SlotKeeper, SlotPlug, SlotTag, TranslateWindowEvent};
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum RibbonOrientation {
@@ -75,6 +69,15 @@ impl Cell {
         let size = self.container.Size()?;
         Ok(point.X >= 0. && point.X < size.X && point.Y >= 0. && point.Y < size.Y)
     }
+    fn resize(&mut self, offset: Vector2, size: Vector2) -> crate::Result<()> {
+        self.container.SetOffset(&Vector3 {
+            X: offset.X,
+            Y: offset.Y,
+            Z: 0.,
+        })?;
+        self.slot_keeper.resize(size)?;
+        Ok(())
+    }
 }
 
 pub struct Ribbon {
@@ -87,10 +90,11 @@ pub struct Ribbon {
 
 impl Ribbon {
     pub fn new(
-        compositor: Compositor,
+        compositor: &Compositor,
         slot: SlotTag,
         orientation: RibbonOrientation,
     ) -> crate::Result<Self> {
+        let compositor = compositor.clone();
         let container = compositor.CreateContainerVisual()?;
         let slot = slot.plug(container.clone().into())?;
         Ok(Self {
@@ -118,15 +122,13 @@ impl Ribbon {
 
     fn resize_cells(&mut self, size: Vector2) -> crate::Result<()> {
         if self.orientation == RibbonOrientation::Stack {
-            for cell in &self.cells {
+            for cell in &mut self.cells {
                 let content_size = size.clone() * cell.limit.content_ratio.clone();
-                let content_offset = Vector3 {
+                let content_offset = Vector2 {
                     X: (size.X - content_size.X) / 2.,
                     Y: (size.Y - content_size.Y) / 2.,
-                    Z: 0.,
                 };
-                cell.container.SetSize(&content_size)?;
-                cell.container.SetOffset(&content_offset)?;
+                cell.resize(content_offset, content_size)?;
             }
         } else {
             let limits = self.cells.iter().map(|c| c.limit).collect::<Vec<_>>();
@@ -147,112 +149,91 @@ impl Ribbon {
                     }
                 };
                 let cell = &mut self.cells[i];
-                cell.container.SetSize(&size)?;
-                cell.container.SetOffset(if hor {
-                    Vector3 {
-                        X: pos,
-                        Y: 0.,
-                        Z: 0.,
-                    }
+                let offset = if hor {
+                    Vector2 { X: pos, Y: 0. }
                 } else {
-                    Vector3 {
-                        X: 0.,
-                        Y: pos,
-                        Z: 0.,
-                    }
-                })?;
+                    Vector2 { X: 0., Y: pos }
+                };
+                cell.resize(offset, size)?;
                 pos += sizes[i];
             }
         }
         Ok(())
     }
-}
 
-impl SendSlotEvent for Ribbon {
-    fn send_size(&mut self, event: SlotSize) -> crate::Result<()> {
-        self.resize_cells(event.0)?;
+    fn translate_window_event_resized(&mut self, size: PhysicalSize<u32>) -> crate::Result<()> {
+        let size = Vector2 {
+            X: size.width as f32,
+            Y: size.height as f32,
+        };
+        self.resize_cells(size)?;
         for cell in &mut self.cells {
+            let size = cell.container.Size()?;
             cell.slot_keeper
-                .send_size(SlotSize(cell.container.Size()?))?
+                .translate_window_event(WindowEvent::Resized(
+                    (size.X as u32, size.Y as u32).into(),
+                ))?;
         }
         Ok(())
     }
 
-    fn send_mouse_left_pressed(&mut self, event: MouseLeftPressed) -> crate::Result<()> {
-        for cell in &mut self.cells {
-            let point = cell.translate_point(event.0)?;
-            cell.slot_keeper
-                .send_mouse_left_pressed(MouseLeftPressed(point))?
+    fn translate_window_event(&mut self, event: WindowEvent) -> crate::Result<()> {
+        match event {
+            WindowEvent::Resized(size) => self.translate_window_event_resized(size),
+            _ => Ok(()),
         }
-        Ok(())
-    }
-
-    fn send_mouse_left_pressed_focused(
-        &mut self,
-        event: MouseLeftPressedFocused,
-    ) -> crate::Result<()> {
-        for cell in &mut self.cells {
-            let point = cell.translate_point(event.0)?;
-            if cell.is_translated_point_in_cell(point)? {
-                return cell
-                    .slot_keeper
-                    .send_mouse_left_pressed_focused(MouseLeftPressedFocused(point));
-            }
-        }
-        Ok(())
     }
 }
 
-pub struct RibbonKeeper(Keeper<Ribbon>);
+// fn send_mouse_left_pressed(&mut self, event: MouseLeftPressed) -> crate::Result<()> {
+//     for cell in &mut self.cells {
+//         let point = cell.translate_point(event.0)?;
+//         cell.slot_keeper
+//             .send_mouse_left_pressed(MouseLeftPressed(point))?
+//     }
+//     Ok(())
+// }
 
-impl RibbonKeeper {
+// fn send_mouse_left_pressed_focused(
+//     &mut self,
+//     event: MouseLeftPressedFocused,
+// ) -> crate::Result<()> {
+//     for cell in &mut self.cells {
+//         let point = cell.translate_point(event.0)?;
+//         if cell.is_translated_point_in_cell(point)? {
+//             return cell
+//                 .slot_keeper
+//                 .send_mouse_left_pressed_focused(MouseLeftPressedFocused(point));
+//         }
+//     }
+//     Ok(())
+// }
+
+pub struct KRibbon(Keeper<Ribbon>);
+
+impl KRibbon {
     pub fn new(
         spawner: impl Spawn,
-        compositor: Compositor,
+        compositor: &Compositor,
         slot: SlotTag,
         orientation: RibbonOrientation,
     ) -> crate::Result<Self> {
-        let keeper = Self(Keeper::new(Ribbon::new(compositor, slot, orientation)?));
-        keeper.spawn_event_handlers(spawner)?;
+        let keeper = Self(Keeper::new(Ribbon::new(
+            compositor,
+            slot.clone(),
+            orientation,
+        )?));
+        spawn_translate_window_events(spawner, slot, keeper.tag())?;
         Ok(keeper)
     }
-    pub fn tag(&self) -> RibbonTag {
-        RibbonTag(self.0.tag())
+    pub fn tag(&self) -> TRibbon {
+        TRibbon(self.0.tag())
     }
     pub fn get(&self) -> RwLockReadGuard<'_, Ribbon> {
         self.0.get()
     }
     pub fn get_mut(&self) -> RwLockWriteGuard<'_, Ribbon> {
         self.0.get_mut()
-    }
-    fn spawn_event_handlers(&self, spawner: impl Spawn) -> crate::Result<()> {
-        let slot = self.0.get().slot.tag();
-        let ribbon = self.tag();
-        spawner.spawn({
-            let slot = slot.clone();
-            let mut ribbon = ribbon.clone();
-            unwrap_err(async move {
-                while let Some(size) = slot.on_size().next().await {
-                    ribbon.send_size(size)?
-                }
-                Ok(())
-            })
-        })?;
-
-        spawner.spawn({
-            let slot = slot.clone();
-            let mut ribbon = ribbon.clone();
-            unwrap_err({
-                async move {
-                    while let Some(event) = slot.on_mouse_left_pressed().next().await {
-                        ribbon.send_mouse_left_pressed(event)?
-                    }
-                    Ok(())
-                }
-            })
-        })?;
-
-        Ok(())
     }
 }
 
@@ -304,31 +285,16 @@ fn adjust_cells(limits: Vec<CellLimit>, mut target: f32) -> Vec<f32> {
 }
 
 #[derive(Clone, PartialEq)]
-pub struct RibbonTag(Tag<Ribbon>);
+pub struct TRibbon(Tag<Ribbon>);
 
-impl RibbonTag {
-    // pub fn send_event<T: Clone + Send + Sync + 'static>(&self, event: T) -> crate::Result<()> {
-    //     self.0.call(|v| v.send_event(event))?
-    // }
+impl TRibbon {
     pub fn add_cell(&self, limit: CellLimit) -> crate::Result<SlotTag> {
         self.0.call_mut(|v| v.add_cell(limit))?
     }
 }
 
-impl SendSlotEvent for RibbonTag {
-    fn send_size(&mut self, event: SlotSize) -> crate::Result<()> {
-        self.0.call_mut(|v| v.send_size(event))?
-    }
-
-    fn send_mouse_left_pressed(&mut self, event: MouseLeftPressed) -> crate::Result<()> {
-        self.0.call_mut(|v| v.send_mouse_left_pressed(event))?
-    }
-
-    fn send_mouse_left_pressed_focused(
-        &mut self,
-        event: MouseLeftPressedFocused,
-    ) -> crate::Result<()> {
-        self.0
-            .call_mut(|v| v.send_mouse_left_pressed_focused(event))?
+impl TranslateWindowEvent for TRibbon {
+    fn translate_window_event(&self, event: WindowEvent) -> crate::Result<()> {
+        self.0.call_mut(|v| v.translate_window_event(event))?
     }
 }

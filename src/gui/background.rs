@@ -15,7 +15,7 @@ use windows::{
 };
 
 use crate::gui::{SlotPlug, SlotTag};
-use crate::{event::ReceiveSlotEvent, unwrap_err};
+use crate::unwrap_err;
 
 pub struct Background {
     compositor: Compositor,
@@ -26,7 +26,13 @@ pub struct Background {
 }
 
 impl Background {
-    fn new(compositor: Compositor, slot: SlotTag, color: Color, round_corners: bool) -> crate::Result<Self> {
+    fn new(
+        compositor: &Compositor,
+        slot: SlotTag,
+        color: Color,
+        round_corners: bool,
+    ) -> crate::Result<Self> {
+        let compositor = compositor.clone();
         let shape = compositor.CreateShapeVisual()?;
         let slot = slot.plug(shape.clone().into())?;
         let background = Self {
@@ -73,8 +79,12 @@ impl Background {
         } else {
             rect_geometry.SetCornerRadius(Vector2 { X: 0., Y: 0. })?;
         }
-        let brush = self.compositor.CreateColorBrushWithColor(self.color.clone())?;
-        let rect = self.compositor.CreateSpriteShapeWithGeometry(rect_geometry)?;
+        let brush = self
+            .compositor
+            .CreateColorBrushWithColor(self.color.clone())?;
+        let rect = self
+            .compositor
+            .CreateSpriteShapeWithGeometry(rect_geometry)?;
         rect.SetFillBrush(brush)?;
         rect.SetOffset(Vector2 { X: 0., Y: 0. })?;
         container_shape.Shapes()?.Append(rect)?;
@@ -89,7 +99,7 @@ pub struct BackgroundKeeper(Keeper<Background>);
 impl BackgroundKeeper {
     pub fn new(
         spawner: impl Spawn,
-        compositor: Compositor,
+        compositor: &Compositor,
         slot: SlotTag,
         color: Color,
         round_corners: bool,
@@ -112,7 +122,7 @@ impl BackgroundKeeper {
         let tag = self.tag();
         let slot = self.get().slot.tag();
         let func = unwrap_err(async move {
-            while let Some(size) = slot.on_size().next().await {
+            while let Some(size) = slot.on_slot_resize().next().await {
                 tag.set_size(size.0)?;
             }
             Ok(())

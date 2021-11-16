@@ -1,10 +1,11 @@
-pub mod event;
 pub mod gui;
 pub mod window;
 
 use futures::{task::SpawnError, Future};
 use thiserror::Error;
 use windows::runtime;
+
+pub use winit::event::WindowEvent;
 
 #[derive(Error, Debug)]
 pub enum Error {

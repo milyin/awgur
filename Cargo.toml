@@ -1,5 +1,5 @@
 [package]
-name = "awgur"
+name = "wag"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,10 +8,12 @@ async_object = { git = "https://github.com/milyin/async-object" }
 futures = "0.3.17"
 thiserror = "1.0"
 float-ord = "0.3.2"
+winit = "0.25.0"
 
 [dependencies.windows]
-version = "0.25.0"
+version = "0.26.0"
 features = [
+    "std",
     "Foundation_Collections",
     "Foundation_Numerics",
     "Graphics",
@@ -22,4 +24,5 @@ features = [
     "Win32_System_LibraryLoader",
     "Win32_System_WinRT",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_System_WinRT_Composition",
 ]

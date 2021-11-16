@@ -1,10 +1,16 @@
-use crate::event::{
-    MouseLeftPressed, MouseLeftPressedFocused, ReceiveSlotEvent, SendSlotEvent, SlotSize,
-};
 use async_object::{EventStream, Keeper, Tag};
-use futures::StreamExt;
+use futures::{
+    task::{Spawn, SpawnExt},
+    StreamExt,
+};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use windows::UI::Composition::{ContainerVisual, Visual};
+use windows::{
+    Foundation::Numerics::Vector2,
+    UI::Composition::{ContainerVisual, Visual},
+};
+use winit::event::WindowEvent;
+
+use crate::unwrap_err;
 
 #[derive(Clone)]
 pub struct Slot {
@@ -79,26 +85,29 @@ impl SlotKeeper {
     pub fn container(&self) -> crate::Result<ContainerVisual> {
         Ok(self.0.clone_shared())
     }
+    pub fn resize(&mut self, size: Vector2) -> crate::Result<()> {
+        self.container()?.SetSize(size)?;
+        self.0.send_event(SlotResize(size));
+        Ok(())
+    }
+    pub fn translate_window_event(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
+        match &event {
+            WindowEvent::Resized(size) => {
+                let size = Vector2 {
+                    X: size.width as f32,
+                    Y: size.height as f32,
+                };
+                self.resize(size)?;
+            }
+            _ => (),
+        }
+        self.0.send_event(event);
+        Ok(())
+    }
 }
 
-impl SendSlotEvent for SlotKeeper {
-    fn send_size(&mut self, event: SlotSize) -> crate::Result<()> {
-        self.container()?.SetSize(event.0)?;
-        self.0.send_event(event);
-        Ok(())
-    }
-    fn send_mouse_left_pressed(&mut self, event: MouseLeftPressed) -> crate::Result<()> {
-        self.0.send_event(event);
-        Ok(())
-    }
-    fn send_mouse_left_pressed_focused(
-        &mut self,
-        event: MouseLeftPressedFocused,
-    ) -> crate::Result<()> {
-        self.0.send_event(event);
-        Ok(())
-    }
-}
+#[derive(Clone)]
+pub struct SlotResize(pub Vector2);
 
 #[derive(Clone, PartialEq, Default)]
 pub struct SlotTag(Tag<Slot, ContainerVisual>);
@@ -112,18 +121,33 @@ impl SlotTag {
     pub fn plug(&self, visual: Visual) -> crate::Result<SlotPlug> {
         Ok(self.0.call_mut(|v| v.plug(visual))??)
     }
+    pub fn on_window_event(&self) -> EventStream<WindowEvent<'static>> {
+        EventStream::new(self.0.clone())
+    }
+    pub fn on_slot_resize(&self) -> EventStream<SlotResize> {
+        EventStream::new(self.0.clone())
+    }
 }
 
-impl ReceiveSlotEvent for SlotTag {
-    fn on_size(&self) -> EventStream<SlotSize> {
-        EventStream::new(self.0.clone())
-    }
+pub trait TranslateWindowEvent {
+    fn translate_window_event(&self, event: WindowEvent) -> crate::Result<()>;
+}
 
-    fn on_mouse_left_pressed(&self) -> EventStream<MouseLeftPressed> {
-        EventStream::new(self.0.clone())
-    }
-
-    fn on_mouse_left_pressed_focused(&self) -> EventStream<MouseLeftPressedFocused> {
-        EventStream::new(self.0.clone())
-    }
+pub fn spawn_translate_window_events(
+    spawner: impl Spawn,
+    source: SlotTag,
+    destination: impl Send + 'static + TranslateWindowEvent,
+) -> crate::Result<()> {
+    let future = async move {
+        while let Some(event) = source.on_window_event().next().await {
+            match destination.translate_window_event(event) {
+                Err(crate::Error::AsyncObject(async_object::Error::Destroyed)) => return Ok(()),
+                e @ Err(_) => return e,
+                _ => (),
+            }
+        }
+        Ok(())
+    };
+    spawner.spawn(unwrap_err(future))?;
+    Ok(())
 }

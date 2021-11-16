@@ -6,20 +6,21 @@ use windows::{
     Graphics::SizeInt32,
     Win32::{
         Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, PWSTR, RECT, WPARAM},
-        System::{LibraryLoader::GetModuleHandleW, WinRT::ICompositorDesktopInterop},
+        System::{LibraryLoader::GetModuleHandleW, WinRT::Composition::ICompositorDesktopInterop},
         UI::WindowsAndMessaging::{
-            AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, GetClientRect, LoadCursorW,
-            PostQuitMessage, RegisterClassW, ShowWindow, CREATESTRUCTW, CW_USEDEFAULT,
-            GWLP_USERDATA, HMENU, IDC_ARROW, SW_SHOW, WINDOW_LONG_PTR_INDEX, WM_DESTROY,
-            WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_NCCREATE, WM_RBUTTONDOWN, WM_SIZE, WM_SIZING,
-            WM_TIMER, WNDCLASSW, WS_EX_NOREDIRECTIONBITMAP, WS_OVERLAPPEDWINDOW,
+            AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetClientRect,
+            GetMessageW, LoadCursorW, PostQuitMessage, RegisterClassW, ShowWindow,
+            TranslateMessage, CREATESTRUCTW, CW_USEDEFAULT, GWLP_USERDATA, HMENU, IDC_ARROW, MSG,
+            SW_SHOW, WINDOW_LONG_PTR_INDEX, WM_DESTROY, WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_NCCREATE,
+            WM_RBUTTONDOWN, WM_SIZE, WM_SIZING, WM_TIMER, WNDCLASSW, WS_EX_NOREDIRECTIONBITMAP,
+            WS_OVERLAPPEDWINDOW,
         },
     },
     UI::Composition::{Compositor, ContainerVisual, Desktop::DesktopWindowTarget},
 };
+use winit::event::WindowEvent;
 
 use crate::{
-    event::{MouseLeftPressed, MouseLeftPressedFocused, SendSlotEvent, SlotSize},
     gui::{SlotKeeper, SlotTag},
     window::wide_string::ToWide,
 };
@@ -32,12 +33,17 @@ pub struct Window {
     target: Option<DesktopWindowTarget>,
     mouse_pos: Vector2,
     compositor: Compositor,
-    root_visual:ContainerVisual,
+    root_visual: ContainerVisual,
     kslot: SlotKeeper,
 }
 
 impl Window {
-    pub fn new(title: &str, width: u32, height: u32) -> crate::Result<Box<Self>> {
+    pub fn new(
+        compositor: &Compositor,
+        title: &str,
+        width: u32,
+        height: u32,
+    ) -> crate::Result<Box<Self>> {
         let class_name = WINDOW_CLASS_NAME.to_wide();
         let instance = unsafe { GetModuleHandleW(PWSTR(std::ptr::null_mut())).ok()? };
         REGISTER_WINDOW_CLASS.call_once(|| {
@@ -68,17 +74,18 @@ impl Window {
             }
             (rect.right - rect.left, rect.bottom - rect.top)
         };
-        let compositor = Compositor::new()?;
-
         let mouse_pos = Vector2::default();
         let root_visual = compositor.CreateContainerVisual()?;
-        root_visual.SetSize(Vector2 { X: width as f32, Y: height as f32 })?;
+        root_visual.SetSize(Vector2 {
+            X: width as f32,
+            Y: height as f32,
+        })?;
         let kslot = SlotKeeper::new(root_visual.clone())?;
         let mut result = Box::new(Self {
             handle: HWND(0),
             target: None,
             mouse_pos,
-            compositor,
+            compositor: compositor.clone(),
             root_visual,
             kslot,
         });
@@ -102,8 +109,9 @@ impl Window {
             .ok()?
         };
 
-        let compositor_desktop: ICompositorDesktopInterop = result.compositor().cast()?;
-        let target = unsafe { compositor_desktop.CreateDesktopWindowTarget(result.handle(), true)? };
+        let compositor_desktop: ICompositorDesktopInterop = compositor.cast()?;
+        let target =
+            unsafe { compositor_desktop.CreateDesktopWindowTarget(result.handle(), true)? };
         target.SetRoot(result.root_visual())?;
         result.target = Some(target);
 
@@ -135,20 +143,18 @@ impl Window {
                 // self.game.on_pointer_moved(&point).unwrap();
             }
             WM_SIZE | WM_SIZING => {
-                let new_size = self.size().unwrap();
-                let new_size = Vector2 {
-                    X: new_size.Width as f32,
-                    Y: new_size.Height as f32,
-                };
-                self.kslot.send_size(SlotSize(new_size)).unwrap();
+                let size = self.size().unwrap();
+                self.kslot
+                    .translate_window_event(WindowEvent::Resized((size.Width, size.Height).into()))
+                    .unwrap();
             }
             WM_LBUTTONDOWN => {
-                self.kslot
-                    .send_mouse_left_pressed(MouseLeftPressed(self.mouse_pos))
-                    .unwrap();
-                self.kslot
-                    .send_mouse_left_pressed_focused(MouseLeftPressedFocused(self.mouse_pos))
-                    .unwrap();
+                // self.kslot
+                // .send_mouse_left_pressed(MouseLeftPressed(self.mouse_pos))
+                // .unwrap();
+                // self.kslot
+                // .send_mouse_left_pressed_focused(MouseLeftPressedFocused(self.mouse_pos))
+                // .unwrap();
             }
             WM_RBUTTONDOWN => {
                 // self.game.on_pointer_pressed(true, false).unwrap();
@@ -196,6 +202,18 @@ impl Window {
 
     pub fn slot(&self) -> SlotTag {
         self.kslot.tag()
+    }
+
+    pub fn run() {
+        let mut message = MSG::default();
+        unsafe {
+            // const IDT_TIMER1: usize = 1;
+            // SetTimer(window.handle(), IDT_TIMER1, 10, None);
+            while GetMessageW(&mut message, HWND(0), 0, 0).into() {
+                TranslateMessage(&mut message);
+                DispatchMessageW(&mut message);
+            }
+        }
     }
 }
 
