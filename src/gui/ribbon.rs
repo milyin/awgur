@@ -1,14 +1,12 @@
-use std::sync::{RwLockReadGuard, RwLockWriteGuard};
-
+use super::{spawn_translate_window_events, SlotKeeper, SlotPlug, SlotTag, TranslateWindowEvent};
 use async_object::{Keeper, Tag};
+use async_trait::async_trait;
 use futures::task::Spawn;
 use windows::{
     Foundation::Numerics::{Vector2, Vector3},
     UI::Composition::{Compositor, ContainerVisual},
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
-
-use super::{spawn_translate_window_events, SlotKeeper, SlotPlug, SlotTag, TranslateWindowEvent};
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum RibbonOrientation {
@@ -82,7 +80,7 @@ impl Cell {
 
 pub struct Ribbon {
     compositor: Compositor,
-    slot: SlotPlug,
+    _slot: SlotPlug,
     container: ContainerVisual,
     orientation: RibbonOrientation,
     cells: Vec<Cell>,
@@ -99,7 +97,7 @@ impl Ribbon {
         let slot = slot.plug(container.clone().into())?;
         Ok(Self {
             compositor,
-            slot,
+            _slot: slot,
             container,
             orientation,
             cells: Vec::new(),
@@ -229,11 +227,8 @@ impl KRibbon {
     pub fn tag(&self) -> TRibbon {
         TRibbon(self.0.tag())
     }
-    pub fn get(&self) -> RwLockReadGuard<'_, Ribbon> {
-        self.0.get()
-    }
-    pub fn get_mut(&self) -> RwLockWriteGuard<'_, Ribbon> {
-        self.0.get_mut()
+    pub fn add_cell(&mut self, limit: CellLimit) -> crate::Result<SlotTag> {
+        self.0.get_mut().add_cell(limit)
     }
 }
 
@@ -288,13 +283,16 @@ fn adjust_cells(limits: Vec<CellLimit>, mut target: f32) -> Vec<f32> {
 pub struct TRibbon(Tag<Ribbon>);
 
 impl TRibbon {
-    pub fn add_cell(&self, limit: CellLimit) -> crate::Result<SlotTag> {
-        self.0.call_mut(|v| v.add_cell(limit))?
+    pub async fn add_cell(&self, limit: CellLimit) -> crate::Result<SlotTag> {
+        self.0.async_call_mut(|v| v.add_cell(limit)).await?
     }
 }
 
+#[async_trait]
 impl TranslateWindowEvent for TRibbon {
-    fn translate_window_event(&self, event: WindowEvent) -> crate::Result<()> {
-        self.0.call_mut(|v| v.translate_window_event(event))?
+    async fn translate_window_event(&self, event: WindowEvent<'static>) -> crate::Result<()> {
+        self.0
+            .async_call_mut(|v| v.translate_window_event(event))
+            .await?
     }
 }

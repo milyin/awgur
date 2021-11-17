@@ -1,9 +1,10 @@
 use async_object::{EventStream, Keeper, Tag};
+use async_trait::async_trait;
 use futures::{
     task::{Spawn, SpawnExt},
     StreamExt,
 };
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, RwLock};
 use windows::{
     Foundation::Numerics::Vector2,
     UI::Composition::{ContainerVisual, Visual},
@@ -11,31 +12,6 @@ use windows::{
 use winit::event::WindowEvent;
 
 use crate::unwrap_err;
-
-#[derive(Clone)]
-pub struct Slot {
-    tag: SlotTag,
-    container: ContainerVisual,
-}
-
-impl Slot {
-    fn new(container: ContainerVisual) -> crate::Result<Self> {
-        Ok(Self {
-            tag: SlotTag::default(),
-            container,
-        })
-    }
-    pub fn plug(&mut self, visual: Visual) -> crate::Result<SlotPlug> {
-        let size = self.container.Size()?;
-        visual.SetSize(size)?;
-        self.container.Children()?.InsertAtTop(visual.clone())?;
-        Ok(SlotPlug {
-            tag: self.tag.clone(),
-            container: self.container.clone(),
-            visual,
-        })
-    }
-}
 
 pub struct SlotPlug {
     tag: SlotTag,
@@ -61,26 +37,18 @@ impl Drop for SlotPlug {
     }
 }
 
-pub struct SlotKeeper(Keeper<Slot, ContainerVisual>);
+pub struct SlotKeeper(Keeper<(), ContainerVisual>);
 
 impl SlotKeeper {
     pub fn new(container: ContainerVisual) -> crate::Result<Self> {
-        let slot = Slot::new(container.clone())?;
         let keeper = Self(Keeper::new_with_shared(
-            slot,
+            (),
             Arc::new(RwLock::new(container)),
         ));
-        keeper.get_mut().tag = keeper.tag();
         Ok(keeper)
     }
     pub fn tag(&self) -> SlotTag {
         SlotTag(self.0.tag())
-    }
-    pub fn get(&self) -> RwLockReadGuard<'_, Slot> {
-        self.0.get()
-    }
-    pub fn get_mut(&self) -> RwLockWriteGuard<'_, Slot> {
-        self.0.get_mut()
     }
     pub fn container(&self) -> crate::Result<ContainerVisual> {
         Ok(self.0.clone_shared())
@@ -110,7 +78,7 @@ impl SlotKeeper {
 pub struct SlotResize(pub Vector2);
 
 #[derive(Clone, PartialEq, Default)]
-pub struct SlotTag(Tag<Slot, ContainerVisual>);
+pub struct SlotTag(Tag<(), ContainerVisual>);
 
 impl SlotTag {
     pub async fn wait_for_destroy(&self) -> crate::Result<()> {
@@ -118,29 +86,38 @@ impl SlotTag {
         while let Some(_) = stream.next().await {}
         Ok(())
     }
-    pub fn plug(&self, visual: Visual) -> crate::Result<SlotPlug> {
-        Ok(self.0.call_mut(|v| v.plug(visual))??)
-    }
     pub fn on_window_event(&self) -> EventStream<WindowEvent<'static>> {
         EventStream::new(self.0.clone())
     }
     pub fn on_slot_resize(&self) -> EventStream<SlotResize> {
         EventStream::new(self.0.clone())
     }
+    pub fn plug(&self, visual: Visual) -> crate::Result<SlotPlug> {
+        let container = self.0.clone_shared()?;
+        let size = container.Size()?;
+        visual.SetSize(size)?;
+        container.Children()?.InsertAtTop(visual.clone())?;
+        Ok(SlotPlug {
+            tag: self.clone(),
+            container: container,
+            visual,
+        })
+    }
 }
 
+#[async_trait]
 pub trait TranslateWindowEvent {
-    fn translate_window_event(&self, event: WindowEvent) -> crate::Result<()>;
+    async fn translate_window_event(&self, event: WindowEvent<'static>) -> crate::Result<()>;
 }
 
 pub fn spawn_translate_window_events(
     spawner: impl Spawn,
     source: SlotTag,
-    destination: impl Send + 'static + TranslateWindowEvent,
+    destination: impl Send + Sync + 'static + TranslateWindowEvent,
 ) -> crate::Result<()> {
     let future = async move {
         while let Some(event) = source.on_window_event().next().await {
-            match destination.translate_window_event(event) {
+            match destination.translate_window_event(event).await {
                 Err(crate::Error::AsyncObject(async_object::Error::Destroyed)) => return Ok(()),
                 e @ Err(_) => return e,
                 _ => (),

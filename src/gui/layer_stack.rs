@@ -1,16 +1,14 @@
-use std::sync::{RwLockReadGuard, RwLockWriteGuard};
-
+use super::{
+    slot::TranslateWindowEvent, spawn_translate_window_events, SlotKeeper, SlotPlug, SlotTag,
+};
 use async_object::{Keeper, Tag};
+use async_trait::async_trait;
 use futures::task::Spawn;
 use windows::{
     Foundation::Numerics::Vector2,
     UI::Composition::{Compositor, ContainerVisual},
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
-
-use super::{
-    slot::TranslateWindowEvent, spawn_translate_window_events, SlotKeeper, SlotPlug, SlotTag,
-};
 
 pub struct LayerStack {
     slots: Vec<SlotKeeper>,
@@ -84,7 +82,6 @@ impl LayerStack {
 //     Ok(())
 // }
 
-#[derive(Clone)]
 pub struct KLayerStack(Keeper<LayerStack>);
 
 impl KLayerStack {
@@ -101,11 +98,8 @@ impl KLayerStack {
     pub fn tag(&self) -> TLayerStack {
         TLayerStack(self.0.tag())
     }
-    pub fn get(&self) -> RwLockReadGuard<'_, LayerStack> {
-        self.0.get()
-    }
-    pub fn get_mut(&self) -> RwLockWriteGuard<'_, LayerStack> {
-        self.0.get_mut()
+    pub fn add_layer(&mut self) -> crate::Result<SlotTag> {
+        self.0.get_mut().add_layer()
     }
 }
 
@@ -113,19 +107,19 @@ impl KLayerStack {
 pub struct TLayerStack(Tag<LayerStack>);
 
 impl TLayerStack {
-    pub fn add_layer(&self) -> crate::Result<SlotTag> {
-        self.0.call_mut(|v| v.add_layer())?
+    pub async fn add_layer(&self) -> crate::Result<SlotTag> {
+        self.0.async_call_mut(|v| v.add_layer()).await?
     }
-    pub fn remove_layer(&self, slot: SlotTag) -> crate::Result<()> {
-        self.0.call_mut(|v| v.remove_layer(slot))?
-    }
-    pub fn is_valid(&self) -> bool {
-        self.0.is_valid()
+    pub async fn remove_layer(&self, slot: SlotTag) -> crate::Result<()> {
+        self.0.async_call_mut(|v| v.remove_layer(slot)).await?
     }
 }
 
+#[async_trait]
 impl TranslateWindowEvent for TLayerStack {
-    fn translate_window_event(&self, event: WindowEvent) -> crate::Result<()> {
-        self.0.call_mut(|v| v.translate_window_event(event))?
+    async fn translate_window_event(&self, event: WindowEvent<'static>) -> crate::Result<()> {
+        self.0
+            .async_call_mut(|v| v.translate_window_event(event))
+            .await?
     }
 }

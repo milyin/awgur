@@ -10,9 +10,9 @@ fn main() -> wag::Result<()> {
     let pool = ThreadPool::new()?;
     let compositor = Compositor::new()?;
     let window = Window::new(&compositor, "demo", 800, 600)?;
-    let layer_stack = KLayerStack::new(pool.clone(), &compositor, &window.slot())?;
-    let layer = layer_stack.tag().add_layer()?;
-    let ribbon = KRibbon::new(
+    let mut layer_stack = KLayerStack::new(pool.clone(), &compositor, &window.slot())?;
+    let layer = layer_stack.add_layer()?;
+    let mut ribbon = KRibbon::new(
         pool.clone(),
         &compositor,
         layer,
@@ -21,14 +21,14 @@ fn main() -> wag::Result<()> {
     let _red_surface = BackgroundKeeper::new(
         pool.clone(),
         &compositor,
-        ribbon.tag().add_cell(CellLimit::default())?,
+        ribbon.add_cell(CellLimit::default())?,
         Colors::Red()?,
         true,
     )?;
     let _green_surface = BackgroundKeeper::new(
         pool.clone(),
         &compositor,
-        ribbon.tag().add_cell(CellLimit::default())?,
+        ribbon.add_cell(CellLimit::default())?,
         Colors::Green()?,
         true,
     )?;
@@ -36,7 +36,7 @@ fn main() -> wag::Result<()> {
     let _blue_surface = BackgroundKeeper::new(
         pool.clone(),
         &compositor,
-        ribbon.tag().add_cell(CellLimit::default())?,
+        ribbon.add_cell(CellLimit::default())?,
         Colors::Blue()?,
         true,
     )?;

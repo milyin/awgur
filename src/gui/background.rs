@@ -1,5 +1,3 @@
-use std::sync::{RwLockReadGuard, RwLockWriteGuard};
-
 use async_object::{Keeper, Tag};
 use float_ord::FloatOrd;
 use futures::{
@@ -93,7 +91,6 @@ impl Background {
     }
 }
 
-#[derive(Clone)]
 pub struct BackgroundKeeper(Keeper<Background>);
 
 impl BackgroundKeeper {
@@ -112,18 +109,12 @@ impl BackgroundKeeper {
     pub fn tag(&self) -> BackgroundTag {
         BackgroundTag(self.0.tag())
     }
-    pub fn get(&self) -> RwLockReadGuard<'_, Background> {
-        self.0.get()
-    }
-    pub fn get_mut(&self) -> RwLockWriteGuard<'_, Background> {
-        self.0.get_mut()
-    }
     fn spawn_event_handlers(&self, spawner: impl Spawn) -> crate::Result<()> {
         let tag = self.tag();
-        let slot = self.get().slot.tag();
+        let slot = self.0.get().slot.tag();
         let func = unwrap_err(async move {
             while let Some(size) = slot.on_slot_resize().next().await {
-                tag.set_size(size.0)?;
+                tag.set_size(size.0).await?;
             }
             Ok(())
         });
@@ -135,16 +126,16 @@ impl BackgroundKeeper {
 pub struct BackgroundTag(Tag<Background>);
 
 impl BackgroundTag {
-    pub fn round_corners(&self) -> crate::Result<bool> {
-        Ok(self.0.call(|v| v.round_corners)?)
+    pub async fn round_corners(&self) -> crate::Result<bool> {
+        Ok(self.0.async_call(|v| v.round_corners).await?)
     }
-    pub fn color(&self) -> crate::Result<Color> {
-        Ok(self.0.call(|v| v.color)?)
+    pub async fn color(&self) -> crate::Result<Color> {
+        Ok(self.0.async_call(|v| v.color).await?)
     }
-    pub fn set_color(&self, color: Color) -> crate::Result<()> {
-        Ok(self.0.call_mut(|v| v.set_color(color))??)
+    pub async fn set_color(&self, color: Color) -> crate::Result<()> {
+        Ok(self.0.async_call_mut(|v| v.set_color(color)).await??)
     }
-    pub fn set_size(&self, size: Vector2) -> crate::Result<()> {
-        Ok(self.0.call_mut(|v| v.set_size(size))??)
+    pub async fn set_size(&self, size: Vector2) -> crate::Result<()> {
+        Ok(self.0.async_call_mut(|v| v.set_size(size)).await??)
     }
 }
