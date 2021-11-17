@@ -15,7 +15,7 @@ use windows::{
 use crate::gui::{SlotPlug, SlotTag};
 use crate::unwrap_err;
 
-pub struct Background {
+pub struct BackgroundIimpl {
     compositor: Compositor,
     slot: SlotPlug,
     shape: ShapeVisual,
@@ -23,7 +23,7 @@ pub struct Background {
     color: Color,
 }
 
-impl Background {
+impl BackgroundIimpl {
     fn new(
         compositor: &Compositor,
         slot: SlotTag,
@@ -91,9 +91,9 @@ impl Background {
     }
 }
 
-pub struct BackgroundKeeper(Keeper<Background>);
+pub struct Background(Keeper<BackgroundIimpl>);
 
-impl BackgroundKeeper {
+impl Background {
     pub fn new(
         spawner: impl Spawn,
         compositor: &Compositor,
@@ -101,13 +101,13 @@ impl BackgroundKeeper {
         color: Color,
         round_corners: bool,
     ) -> crate::Result<Self> {
-        let keeper = Keeper::new(Background::new(compositor, slot, color, round_corners)?);
+        let keeper = Keeper::new(BackgroundIimpl::new(compositor, slot, color, round_corners)?);
         let keeper = Self(keeper);
         keeper.spawn_event_handlers(spawner)?;
         Ok(keeper)
     }
-    pub fn tag(&self) -> BackgroundTag {
-        BackgroundTag(self.0.tag())
+    pub fn tag(&self) -> TBackground {
+        TBackground(self.0.tag())
     }
     fn spawn_event_handlers(&self, spawner: impl Spawn) -> crate::Result<()> {
         let tag = self.tag();
@@ -123,9 +123,9 @@ impl BackgroundKeeper {
     }
 }
 #[derive(Clone, PartialEq)]
-pub struct BackgroundTag(Tag<Background>);
+pub struct TBackground(Tag<BackgroundIimpl>);
 
-impl BackgroundTag {
+impl TBackground {
     pub async fn round_corners(&self) -> crate::Result<bool> {
         Ok(self.0.async_call(|v| v.round_corners).await?)
     }

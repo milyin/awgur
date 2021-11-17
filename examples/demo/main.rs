@@ -1,7 +1,10 @@
 use futures::executor::ThreadPool;
 use wag::{
-    gui::{BackgroundKeeper, CellLimit, KLayerStack, KRibbon, RibbonOrientation},
-    window::{initialize_window_thread, native::Window},
+    gui::{Background, CellLimit, LayerStack, Ribbon, RibbonOrientation},
+    window::{
+        initialize_window_thread,
+        native::{run_message_loop, Window},
+    },
 };
 use windows::UI::{Colors, Composition::Compositor};
 
@@ -10,22 +13,22 @@ fn main() -> wag::Result<()> {
     let pool = ThreadPool::new()?;
     let compositor = Compositor::new()?;
     let window = Window::new(&compositor, "demo", 800, 600)?;
-    let mut layer_stack = KLayerStack::new(pool.clone(), &compositor, &window.slot())?;
+    let mut layer_stack = LayerStack::new(pool.clone(), &compositor, &window.slot())?;
     let layer = layer_stack.add_layer()?;
-    let mut ribbon = KRibbon::new(
+    let mut ribbon = Ribbon::new(
         pool.clone(),
         &compositor,
         layer,
         RibbonOrientation::Horizontal,
     )?;
-    let _red_surface = BackgroundKeeper::new(
+    let _red_surface = Background::new(
         pool.clone(),
         &compositor,
         ribbon.add_cell(CellLimit::default())?,
         Colors::Red()?,
         true,
     )?;
-    let _green_surface = BackgroundKeeper::new(
+    let _green_surface = Background::new(
         pool.clone(),
         &compositor,
         ribbon.add_cell(CellLimit::default())?,
@@ -33,7 +36,7 @@ fn main() -> wag::Result<()> {
         true,
     )?;
 
-    let _blue_surface = BackgroundKeeper::new(
+    let _blue_surface = Background::new(
         pool.clone(),
         &compositor,
         ribbon.add_cell(CellLimit::default())?,
@@ -41,7 +44,7 @@ fn main() -> wag::Result<()> {
         true,
     )?;
 
-    Window::run();
+    run_message_loop();
 
     Ok(())
 }

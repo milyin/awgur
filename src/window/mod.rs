@@ -3,6 +3,7 @@ mod native_window;
 mod wide_string;
 
 pub mod native {
+    pub use super::native_window::run_message_loop;
     pub use super::native_window::Window;
 }
 

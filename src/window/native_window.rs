@@ -21,7 +21,7 @@ use windows::{
 use winit::event::WindowEvent;
 
 use crate::{
-    gui::{SlotKeeper, SlotTag},
+    gui::{Slot, SlotTag},
     window::wide_string::ToWide,
 };
 
@@ -34,7 +34,7 @@ pub struct Window {
     mouse_pos: Vector2,
     compositor: Compositor,
     root_visual: ContainerVisual,
-    kslot: SlotKeeper,
+    kslot: Slot,
 }
 
 impl Window {
@@ -80,7 +80,7 @@ impl Window {
             X: width as f32,
             Y: height as f32,
         })?;
-        let kslot = SlotKeeper::new(root_visual.clone())?;
+        let kslot = Slot::new(root_visual.clone())?;
         let mut result = Box::new(Self {
             handle: HWND(0),
             target: None,
@@ -203,16 +203,16 @@ impl Window {
     pub fn slot(&self) -> SlotTag {
         self.kslot.tag()
     }
+}
 
-    pub fn run() {
-        let mut message = MSG::default();
-        unsafe {
-            // const IDT_TIMER1: usize = 1;
-            // SetTimer(window.handle(), IDT_TIMER1, 10, None);
-            while GetMessageW(&mut message, HWND(0), 0, 0).into() {
-                TranslateMessage(&mut message);
-                DispatchMessageW(&mut message);
-            }
+pub fn run_message_loop() {
+    let mut message = MSG::default();
+    unsafe {
+        // const IDT_TIMER1: usize = 1;
+        // SetTimer(window.handle(), IDT_TIMER1, 10, None);
+        while GetMessageW(&mut message, HWND(0), 0, 0).into() {
+            TranslateMessage(&mut message);
+            DispatchMessageW(&mut message);
         }
     }
 }

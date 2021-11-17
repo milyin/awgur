@@ -37,9 +37,9 @@ impl Drop for SlotPlug {
     }
 }
 
-pub struct SlotKeeper(Keeper<(), ContainerVisual>);
+pub struct Slot(Keeper<(), ContainerVisual>);
 
-impl SlotKeeper {
+impl Slot {
     pub fn new(container: ContainerVisual) -> crate::Result<Self> {
         let keeper = Self(Keeper::new_with_shared(
             (),

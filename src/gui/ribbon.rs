@@ -1,4 +1,4 @@
-use super::{spawn_translate_window_events, SlotKeeper, SlotPlug, SlotTag, TranslateWindowEvent};
+use super::{spawn_translate_window_events, Slot, SlotPlug, SlotTag, TranslateWindowEvent};
 use async_object::{Keeper, Tag};
 use async_trait::async_trait;
 use futures::task::Spawn;
@@ -51,7 +51,7 @@ impl Default for CellLimit {
 }
 
 struct Cell {
-    slot_keeper: SlotKeeper,
+    slot_keeper: Slot,
     container: ContainerVisual,
     limit: CellLimit,
 }
@@ -78,7 +78,7 @@ impl Cell {
     }
 }
 
-pub struct Ribbon {
+pub struct RibbonImpl {
     compositor: Compositor,
     _slot: SlotPlug,
     container: ContainerVisual,
@@ -86,8 +86,8 @@ pub struct Ribbon {
     cells: Vec<Cell>,
 }
 
-impl Ribbon {
-    pub fn new(
+impl RibbonImpl {
+    fn new(
         compositor: &Compositor,
         slot: SlotTag,
         orientation: RibbonOrientation,
@@ -104,9 +104,9 @@ impl Ribbon {
         })
     }
 
-    pub fn add_cell(&mut self, limit: CellLimit) -> crate::Result<SlotTag> {
+    fn add_cell(&mut self, limit: CellLimit) -> crate::Result<SlotTag> {
         let container = self.compositor.CreateContainerVisual()?;
-        let slot_keeper = SlotKeeper::new(container.clone())?;
+        let slot_keeper = Slot::new(container.clone())?;
         self.container.Children()?.InsertAtTop(container.clone())?;
         let slot = slot_keeper.tag();
         self.cells.push(Cell {
@@ -207,16 +207,16 @@ impl Ribbon {
 //     Ok(())
 // }
 
-pub struct KRibbon(Keeper<Ribbon>);
+pub struct Ribbon(Keeper<RibbonImpl>);
 
-impl KRibbon {
+impl Ribbon {
     pub fn new(
         spawner: impl Spawn,
         compositor: &Compositor,
         slot: SlotTag,
         orientation: RibbonOrientation,
     ) -> crate::Result<Self> {
-        let keeper = Self(Keeper::new(Ribbon::new(
+        let keeper = Self(Keeper::new(RibbonImpl::new(
             compositor,
             slot.clone(),
             orientation,
@@ -280,7 +280,7 @@ fn adjust_cells(limits: Vec<CellLimit>, mut target: f32) -> Vec<f32> {
 }
 
 #[derive(Clone, PartialEq)]
-pub struct TRibbon(Tag<Ribbon>);
+pub struct TRibbon(Tag<RibbonImpl>);
 
 impl TRibbon {
     pub async fn add_cell(&self, limit: CellLimit) -> crate::Result<SlotTag> {

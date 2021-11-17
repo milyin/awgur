@@ -1,5 +1,5 @@
 use super::{
-    slot::TranslateWindowEvent, spawn_translate_window_events, SlotKeeper, SlotPlug, SlotTag,
+    slot::TranslateWindowEvent, spawn_translate_window_events, Slot, SlotPlug, SlotTag,
 };
 use async_object::{Keeper, Tag};
 use async_trait::async_trait;
@@ -10,14 +10,14 @@ use windows::{
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
 
-pub struct LayerStack {
-    slots: Vec<SlotKeeper>,
+struct LayerStackImpl {
+    slots: Vec<Slot>,
     compositor: Compositor,
     visual: ContainerVisual,
     _slot_plug: SlotPlug,
 }
 
-impl LayerStack {
+impl LayerStackImpl {
     fn new(compositor: &Compositor, slot: &SlotTag) -> crate::Result<Self> {
         let visual = compositor.CreateContainerVisual()?;
         let _slot_plug = slot.plug(visual.clone().into())?;
@@ -33,13 +33,13 @@ impl LayerStack {
         let container = self.compositor.CreateContainerVisual()?;
         container.SetSize(self.visual.Size()?)?;
         self.visual.Children()?.InsertAtTop(container.clone())?;
-        let slot_keeper = SlotKeeper::new(container)?;
+        let slot_keeper = Slot::new(container)?;
         let slot = slot_keeper.tag();
         self.slots.push(slot_keeper);
         Ok(slot)
     }
 
-    pub fn remove_layer(&mut self, slot: SlotTag) -> crate::Result<()> {
+    fn remove_layer(&mut self, slot: SlotTag) -> crate::Result<()> {
         if let Some(index) = self.slots.iter().position(|v| v.tag() == slot) {
             let slot = self.slots.remove(index);
             self.visual.Children()?.Remove(slot.container()?)?;
@@ -82,15 +82,15 @@ impl LayerStack {
 //     Ok(())
 // }
 
-pub struct KLayerStack(Keeper<LayerStack>);
+pub struct LayerStack(Keeper<LayerStackImpl>);
 
-impl KLayerStack {
+impl LayerStack {
     pub fn new(
         spawner: impl Spawn,
         compositor: &Compositor,
         slot: &SlotTag,
     ) -> crate::Result<Self> {
-        let frame = LayerStack::new(compositor, slot)?;
+        let frame = LayerStackImpl::new(compositor, slot)?;
         let keeper = Self(Keeper::new(frame));
         spawn_translate_window_events(spawner, slot.clone(), keeper.tag())?;
         Ok(keeper)
@@ -104,7 +104,7 @@ impl KLayerStack {
 }
 
 #[derive(Clone, PartialEq)]
-pub struct TLayerStack(Tag<LayerStack>);
+pub struct TLayerStack(Tag<LayerStackImpl>);
 
 impl TLayerStack {
     pub async fn add_layer(&self) -> crate::Result<SlotTag> {
