@@ -18,7 +18,10 @@ use windows::{
     },
     UI::Composition::{Compositor, ContainerVisual, Desktop::DesktopWindowTarget},
 };
-use winit::event::WindowEvent;
+use winit::{
+    dpi::PhysicalPosition,
+    event::{DeviceId, ModifiersState, WindowEvent},
+};
 
 use crate::{
     gui::{Slot, SlotTag},
@@ -31,10 +34,9 @@ static WINDOW_CLASS_NAME: &str = "awgur.Window";
 pub struct Window {
     handle: HWND,
     target: Option<DesktopWindowTarget>,
-    mouse_pos: Vector2,
     compositor: Compositor,
     root_visual: ContainerVisual,
-    kslot: Slot,
+    slot: Slot,
 }
 
 impl Window {
@@ -74,20 +76,18 @@ impl Window {
             }
             (rect.right - rect.left, rect.bottom - rect.top)
         };
-        let mouse_pos = Vector2::default();
         let root_visual = compositor.CreateContainerVisual()?;
         root_visual.SetSize(Vector2 {
             X: width as f32,
             Y: height as f32,
         })?;
-        let kslot = Slot::new(root_visual.clone())?;
+        let slot = Slot::new(root_visual.clone())?;
         let mut result = Box::new(Self {
             handle: HWND(0),
             target: None,
-            mouse_pos,
             compositor: compositor.clone(),
             root_visual,
-            kslot,
+            slot,
         });
 
         let title = title.to_wide();
@@ -135,16 +135,21 @@ impl Window {
             }
             WM_MOUSEMOVE => {
                 let (x, y) = get_mouse_position(lparam);
-                let point = Vector2 {
-                    X: x as f32,
-                    Y: y as f32,
-                };
-                self.mouse_pos = point;
                 // self.game.on_pointer_moved(&point).unwrap();
+                self.slot
+                    .translate_window_event(WindowEvent::CursorMoved {
+                        device_id: unsafe { DeviceId::dummy() },
+                        position: PhysicalPosition {
+                            x: x as f64,
+                            y: y as f64,
+                        },
+                        modifiers: ModifiersState::default(),
+                    })
+                    .unwrap();
             }
             WM_SIZE | WM_SIZING => {
                 let size = self.size().unwrap();
-                self.kslot
+                self.slot
                     .translate_window_event(WindowEvent::Resized((size.Width, size.Height).into()))
                     .unwrap();
             }
@@ -201,7 +206,7 @@ impl Window {
     }
 
     pub fn slot(&self) -> SlotTag {
-        self.kslot.tag()
+        self.slot.tag()
     }
 }
 

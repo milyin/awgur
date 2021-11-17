@@ -6,7 +6,10 @@ use windows::{
     Foundation::Numerics::{Vector2, Vector3},
     UI::Composition::{Compositor, ContainerVisual},
 };
-use winit::{dpi::PhysicalSize, event::WindowEvent};
+use winit::{
+    dpi::{PhysicalPosition, PhysicalSize},
+    event::WindowEvent,
+};
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum RibbonOrientation {
@@ -51,7 +54,7 @@ impl Default for CellLimit {
 }
 
 struct Cell {
-    slot_keeper: Slot,
+    slot: Slot,
     container: ContainerVisual,
     limit: CellLimit,
 }
@@ -63,6 +66,20 @@ impl Cell {
         point.Y -= offset.Y;
         Ok(point)
     }
+    fn translate_physical_position(
+        &self,
+        mut point: PhysicalPosition<f64>,
+    ) -> crate::Result<PhysicalPosition<f64>> {
+        let point = self.translate_point(Vector2 {
+            X: point.x as f32,
+            Y: point.y as f32,
+        })?;
+        Ok(PhysicalPosition {
+            x: point.X as f64,
+            y: point.Y as f64,
+        })
+    }
+    #[allow(dead_code)]
     fn is_translated_point_in_cell(&self, point: Vector2) -> crate::Result<bool> {
         let size = self.container.Size()?;
         Ok(point.X >= 0. && point.X < size.X && point.Y >= 0. && point.Y < size.Y)
@@ -73,7 +90,7 @@ impl Cell {
             Y: offset.Y,
             Z: 0.,
         })?;
-        self.slot_keeper.resize(size)?;
+        self.slot.resize(size)?;
         Ok(())
     }
 }
@@ -106,16 +123,16 @@ impl RibbonImpl {
 
     fn add_cell(&mut self, limit: CellLimit) -> crate::Result<SlotTag> {
         let container = self.compositor.CreateContainerVisual()?;
-        let slot_keeper = Slot::new(container.clone())?;
+        let slot = Slot::new(container.clone())?;
         self.container.Children()?.InsertAtTop(container.clone())?;
-        let slot = slot_keeper.tag();
+        let tslot = slot.tag();
         self.cells.push(Cell {
-            slot_keeper,
+            slot,
             container,
             limit,
         });
         self.resize_cells(self.container.Size()?)?;
-        Ok(slot)
+        Ok(tslot)
     }
 
     fn resize_cells(&mut self, size: Vector2) -> crate::Result<()> {
@@ -158,6 +175,12 @@ impl RibbonImpl {
         }
         Ok(())
     }
+    fn translate_window_event_default(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
+        for cell in &mut self.cells {
+            cell.slot.translate_window_event(event.clone())?;
+        }
+        Ok(())
+    }
 
     fn translate_window_event_resized(&mut self, size: PhysicalSize<u32>) -> crate::Result<()> {
         let size = Vector2 {
@@ -167,18 +190,39 @@ impl RibbonImpl {
         self.resize_cells(size)?;
         for cell in &mut self.cells {
             let size = cell.container.Size()?;
-            cell.slot_keeper
-                .translate_window_event(WindowEvent::Resized(
-                    (size.X as u32, size.Y as u32).into(),
-                ))?;
+            cell.slot.translate_window_event(WindowEvent::Resized(
+                (size.X as u32, size.Y as u32).into(),
+            ))?;
         }
         Ok(())
     }
 
-    fn translate_window_event(&mut self, event: WindowEvent) -> crate::Result<()> {
+    fn translate_window_event_cursor_moved(
+        &mut self,
+        position: PhysicalPosition<f64>,
+        event: WindowEvent<'static>,
+    ) -> crate::Result<()> {
+        for cell in &mut self.cells {
+            let mut event = event.clone();
+            let pos = position;
+            match event {
+                WindowEvent::CursorMoved {
+                    ref mut position, ..
+                } => *position = cell.translate_physical_position(pos)?,
+                _ => {}
+            };
+            cell.slot.translate_window_event(event)?;
+        }
+        Ok(())
+    }
+
+    fn translate_window_event(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
         match event {
             WindowEvent::Resized(size) => self.translate_window_event_resized(size),
-            _ => Ok(()),
+            ref event @ WindowEvent::CursorMoved { ref position, .. } => {
+                self.translate_window_event_cursor_moved(*position, event.clone())
+            }
+            event => self.translate_window_event_default(event),
         }
     }
 }

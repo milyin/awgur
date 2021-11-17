@@ -1,6 +1,4 @@
-use super::{
-    slot::TranslateWindowEvent, spawn_translate_window_events, Slot, SlotPlug, SlotTag,
-};
+use super::{slot::TranslateWindowEvent, spawn_translate_window_events, Slot, SlotPlug, SlotTag};
 use async_object::{Keeper, Tag};
 use async_trait::async_trait;
 use futures::task::Spawn;
@@ -46,23 +44,20 @@ impl LayerStackImpl {
         }
         Ok(())
     }
-
-    fn translate_window_event_resized(&mut self, size: PhysicalSize<u32>) -> crate::Result<()> {
-        self.visual.SetSize(Vector2 {
-            X: size.width as f32,
-            Y: size.height as f32,
-        })?;
+    fn translate_window_event(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
+        match &event {
+            WindowEvent::Resized(size) => {
+                self.visual.SetSize(Vector2 {
+                    X: size.width as f32,
+                    Y: size.height as f32,
+                })?;
+            }
+            _ => (),
+        };
         for slot in &mut self.slots {
-            slot.translate_window_event(WindowEvent::Resized(size))?
+            slot.translate_window_event(event.clone())?
         }
         Ok(())
-    }
-
-    fn translate_window_event(&mut self, event: WindowEvent) -> crate::Result<()> {
-        match event {
-            WindowEvent::Resized(size) => self.translate_window_event_resized(size),
-            _ => Ok(()),
-        }
     }
 }
 // fn send_mouse_left_pressed(&mut self, event: MouseLeftPressed) -> crate::Result<()> {
