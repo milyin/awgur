@@ -3,7 +3,7 @@ pub mod window;
 
 use futures::{task::SpawnError, Future};
 use thiserror::Error;
-use windows::runtime;
+use windows::core;
 
 pub use winit::event::WindowEvent;
 
@@ -18,13 +18,13 @@ pub enum Error {
     #[error(transparent)]
     AsyncObject(async_object::Error),
     #[error(transparent)]
-    Windows(runtime::Error),
+    Windows(core::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-impl From<runtime::Error> for Error {
-    fn from(e: runtime::Error) -> Self {
+impl From<core::Error> for Error {
+    fn from(e: core::Error) -> Self {
         Error::Windows(e)
     }
 }

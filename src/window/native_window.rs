@@ -1,7 +1,7 @@
 use std::sync::Once;
 
 use windows::{
-    runtime::{self, Handle, Interface},
+    core::{self, Handle, Interface},
     Foundation::Numerics::Vector2,
     Graphics::SizeInt32,
     Win32::{
@@ -217,7 +217,7 @@ pub fn run_message_loop() {
     }
 }
 
-fn get_window_size(window_handle: HWND) -> runtime::Result<SizeInt32> {
+fn get_window_size(window_handle: HWND) -> core::Result<SizeInt32> {
     unsafe {
         let mut rect = RECT::default();
         let _ = GetClientRect(window_handle, &mut rect).ok()?;
