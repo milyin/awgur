@@ -1,4 +1,7 @@
-use super::{FromVector2, IntoVector2, Slot, SlotPlug, SlotTag, TranslateWindowEvent, spawn_translate_window_events};
+use super::{
+    is_translated_point_in_box, spawn_translate_window_events, FromVector2, IntoVector2, Slot,
+    SlotPlug, SlotTag, TranslateWindowEvent,
+};
 use async_object::{Keeper, Tag};
 use async_trait::async_trait;
 use futures::task::Spawn;
@@ -66,10 +69,9 @@ impl Cell {
         point.Y -= offset.Y;
         Ok(point)
     }
-    #[allow(dead_code)]
     fn is_translated_point_in_cell(&self, point: Vector2) -> crate::Result<bool> {
         let size = self.container.Size()?;
-        Ok(point.X >= 0. && point.X < size.X && point.Y >= 0. && point.Y < size.Y)
+        Ok(is_translated_point_in_box(point, size))
     }
     fn resize(&mut self, offset: Vector2, size: Vector2) -> crate::Result<()> {
         self.container.SetOffset(&Vector3 {
@@ -88,6 +90,7 @@ pub struct RibbonImpl {
     container: ContainerVisual,
     orientation: RibbonOrientation,
     cells: Vec<Cell>,
+    mouse_pos: Option<Vector2>,
 }
 
 impl RibbonImpl {
@@ -105,6 +108,7 @@ impl RibbonImpl {
             container,
             orientation,
             cells: Vec::new(),
+            mouse_pos: None,
         })
     }
 
@@ -186,18 +190,36 @@ impl RibbonImpl {
     fn translate_window_event_cursor_moved(
         &mut self,
         position: PhysicalPosition<f64>,
-        event: WindowEvent<'static>,
+        event: &WindowEvent<'static>,
     ) -> crate::Result<()> {
+        let mouse_pos = position.into_vector2();
+        self.mouse_pos = Some(mouse_pos);
         for cell in &mut self.cells {
             let mut event = event.clone();
             let pos = position;
             match event {
                 WindowEvent::CursorMoved {
                     ref mut position, ..
-                } => *position = cell.translate_point(pos.into_vector2())?.from_vector2(),
+                } => *position = cell.translate_point(mouse_pos)?.from_vector2(),
                 _ => {}
             };
             cell.slot.send_window_event(event)?;
+        }
+        Ok(())
+    }
+
+    fn translate_window_event_mouse_input(
+        &mut self,
+        event: &WindowEvent<'static>,
+    ) -> crate::Result<()> {
+        if let Some(mouse_pos) = self.mouse_pos {
+            for cell in &mut self.cells {
+                let mouse_pos = cell.translate_point(mouse_pos)?;
+                if cell.is_translated_point_in_cell(mouse_pos)? {
+                    let event = event.clone();
+                    cell.slot.send_window_event(event)?;
+                }
+            }
         }
         Ok(())
     }
@@ -206,7 +228,10 @@ impl RibbonImpl {
         match event {
             WindowEvent::Resized(size) => self.translate_window_event_resized(size),
             ref event @ WindowEvent::CursorMoved { ref position, .. } => {
-                self.translate_window_event_cursor_moved(*position, event.clone())
+                self.translate_window_event_cursor_moved(*position, event)
+            }
+            ref event @ WindowEvent::MouseInput { .. } => {
+                self.translate_window_event_mouse_input(event)
             }
             event => self.translate_window_event_default(event),
         }

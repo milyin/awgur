@@ -44,20 +44,31 @@ impl LayerStackImpl {
         }
         Ok(())
     }
+    fn translate_event_to_all_layers(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
+        for slot in &mut self.slots {
+            slot.send_window_event(event.clone())?
+        }
+        Ok(())
+    }
+    fn translate_event_to_top_layer(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
+        if let Some(slot) = self.slots.first_mut() {
+            slot.send_window_event(event)?
+        }
+        Ok(())
+    }
     fn translate_window_event(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
-        match &event {
+        match event {
             WindowEvent::Resized(size) => {
                 self.visual.SetSize(Vector2 {
                     X: size.width as f32,
                     Y: size.height as f32,
                 })?;
+                self.translate_event_to_all_layers(event)
             }
-            _ => (),
-        };
-        for slot in &mut self.slots {
-            slot.send_window_event(event.clone())?
+            event @ WindowEvent::CursorMoved { .. } => self.translate_event_to_top_layer(event),
+            event @ WindowEvent::MouseInput { .. } => self.translate_event_to_top_layer(event),
+            _ => self.translate_event_to_all_layers(event),
         }
-        Ok(())
     }
 }
 // fn send_mouse_left_pressed(&mut self, event: MouseLeftPressed) -> crate::Result<()> {

@@ -20,7 +20,7 @@ use windows::{
 };
 use winit::{
     dpi::PhysicalPosition,
-    event::{DeviceId, ModifiersState, WindowEvent},
+    event::{DeviceId, ElementState, ModifiersState, MouseButton, WindowEvent},
 };
 
 use crate::{
@@ -154,12 +154,14 @@ impl Window {
                     .unwrap();
             }
             WM_LBUTTONDOWN => {
-                // self.kslot
-                // .send_mouse_left_pressed(MouseLeftPressed(self.mouse_pos))
-                // .unwrap();
-                // self.kslot
-                // .send_mouse_left_pressed_focused(MouseLeftPressedFocused(self.mouse_pos))
-                // .unwrap();
+                self.slot
+                    .send_window_event(WindowEvent::MouseInput {
+                        device_id: unsafe { DeviceId::dummy() },
+                        state: ElementState::Pressed,
+                        button: MouseButton::Left,
+                        modifiers: ModifiersState::default(),
+                    })
+                    .unwrap();
             }
             WM_RBUTTONDOWN => {
                 // self.game.on_pointer_pressed(true, false).unwrap();
