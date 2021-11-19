@@ -6,7 +6,7 @@ use windows::{
     Foundation::Numerics::Vector2,
     UI::Composition::{Compositor, ContainerVisual},
 };
-use winit::{dpi::PhysicalSize, event::WindowEvent};
+use winit::event::WindowEvent;
 
 struct LayerStackImpl {
     slots: Vec<Slot>,
@@ -55,7 +55,7 @@ impl LayerStackImpl {
             _ => (),
         };
         for slot in &mut self.slots {
-            slot.translate_window_event(event.clone())?
+            slot.send_window_event(event.clone())?
         }
         Ok(())
     }
@@ -102,19 +102,26 @@ impl LayerStack {
 pub struct TLayerStack(Tag<LayerStackImpl>);
 
 impl TLayerStack {
-    pub async fn add_layer(&self) -> crate::Result<SlotTag> {
-        self.0.async_call_mut(|v| v.add_layer()).await?
+    pub async fn add_layer(&self) -> crate::Result<Option<SlotTag>> {
+        self.0.async_call_mut(|v| v.add_layer()).await.transpose()
     }
-    pub async fn remove_layer(&self, slot: SlotTag) -> crate::Result<()> {
-        self.0.async_call_mut(|v| v.remove_layer(slot)).await?
+    pub async fn remove_layer(&self, slot: SlotTag) -> crate::Result<Option<()>> {
+        self.0
+            .async_call_mut(|v| v.remove_layer(slot))
+            .await
+            .transpose()
     }
 }
 
 #[async_trait]
 impl TranslateWindowEvent for TLayerStack {
-    async fn translate_window_event(&self, event: WindowEvent<'static>) -> crate::Result<()> {
+    async fn translate_window_event(
+        &self,
+        event: WindowEvent<'static>,
+    ) -> crate::Result<Option<()>> {
         self.0
             .async_call_mut(|v| v.translate_window_event(event))
-            .await?
+            .await
+            .transpose()
     }
 }

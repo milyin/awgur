@@ -14,14 +14,14 @@ use winit::event::WindowEvent;
 use crate::unwrap_err;
 
 pub struct SlotPlug {
-    tag: SlotTag,
-    container: ContainerVisual,
-    visual: Visual,
+    slot_tag: SlotTag,
+    slot_container: Option<ContainerVisual>,
+    plugged_visual: Visual,
 }
 
 impl SlotPlug {
     pub fn tag(&self) -> SlotTag {
-        self.tag.clone()
+        self.slot_tag.clone()
     }
 }
 
@@ -33,7 +33,11 @@ impl From<SlotPlug> for SlotTag {
 
 impl Drop for SlotPlug {
     fn drop(&mut self) {
-        let _ = self.container.Children().map(|c| c.Remove(&self.visual));
+        if let Some(ref mut slot_container) = self.slot_container {
+            let _ = slot_container
+                .Children()
+                .map(|c| c.Remove(&self.plugged_visual));
+        }
     }
 }
 
@@ -58,7 +62,7 @@ impl Slot {
         self.0.send_event(SlotResize(size));
         Ok(())
     }
-    pub fn translate_window_event(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
+    pub fn send_window_event(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
         match &event {
             WindowEvent::Resized(size) => {
                 let size = Vector2 {
@@ -93,21 +97,26 @@ impl SlotTag {
         EventStream::new(self.0.clone())
     }
     pub fn plug(&self, visual: Visual) -> crate::Result<SlotPlug> {
-        let container = self.0.clone_shared()?;
-        let size = container.Size()?;
-        visual.SetSize(size)?;
-        container.Children()?.InsertAtTop(visual.clone())?;
+        let slot_container = self.0.clone_shared();
+        if let Some(ref slot_container) = slot_container {
+            let size = slot_container.Size()?;
+            visual.SetSize(size)?;
+            slot_container.Children()?.InsertAtTop(visual.clone())?;
+        }
         Ok(SlotPlug {
-            tag: self.clone(),
-            container: container,
-            visual,
+            slot_tag: self.clone(),
+            slot_container,
+            plugged_visual: visual,
         })
     }
 }
 
 #[async_trait]
 pub trait TranslateWindowEvent {
-    async fn translate_window_event(&self, event: WindowEvent<'static>) -> crate::Result<()>;
+    async fn translate_window_event(
+        &self,
+        event: WindowEvent<'static>,
+    ) -> crate::Result<Option<()>>;
 }
 
 pub fn spawn_translate_window_events(
@@ -117,10 +126,8 @@ pub fn spawn_translate_window_events(
 ) -> crate::Result<()> {
     let future = async move {
         while let Some(event) = source.on_window_event().next().await {
-            match destination.translate_window_event(event).await {
-                Err(crate::Error::AsyncObject(async_object::Error::Destroyed)) => return Ok(()),
-                e @ Err(_) => return e,
-                _ => (),
+            if destination.translate_window_event(event).await?.is_none() {
+                break;
             }
         }
         Ok(())

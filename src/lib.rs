@@ -16,8 +16,6 @@ pub enum Error {
     #[error(transparent)]
     StdIO(std::io::Error),
     #[error(transparent)]
-    AsyncObject(async_object::Error),
-    #[error(transparent)]
     Windows(core::Error),
 }
 
@@ -29,11 +27,6 @@ impl From<core::Error> for Error {
     }
 }
 
-impl From<async_object::Error> for Error {
-    fn from(e: async_object::Error) -> Self {
-        Error::AsyncObject(e)
-    }
-}
 impl From<SpawnError> for Error {
     fn from(e: SpawnError) -> Self {
         Error::Spawn(e)

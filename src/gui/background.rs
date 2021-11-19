@@ -101,7 +101,12 @@ impl Background {
         color: Color,
         round_corners: bool,
     ) -> crate::Result<Self> {
-        let keeper = Keeper::new(BackgroundIimpl::new(compositor, slot, color, round_corners)?);
+        let keeper = Keeper::new(BackgroundIimpl::new(
+            compositor,
+            slot,
+            color,
+            round_corners,
+        )?);
         let keeper = Self(keeper);
         keeper.spawn_event_handlers(spawner)?;
         Ok(keeper)
@@ -126,16 +131,22 @@ impl Background {
 pub struct TBackground(Tag<BackgroundIimpl>);
 
 impl TBackground {
-    pub async fn round_corners(&self) -> crate::Result<bool> {
-        Ok(self.0.async_call(|v| v.round_corners).await?)
+    pub async fn round_corners(&self) -> Option<bool> {
+        self.0.async_call(|v| v.round_corners).await
     }
-    pub async fn color(&self) -> crate::Result<Color> {
-        Ok(self.0.async_call(|v| v.color).await?)
+    pub async fn color(&self) -> Option<Color> {
+        self.0.async_call(|v| v.color).await
     }
-    pub async fn set_color(&self, color: Color) -> crate::Result<()> {
-        Ok(self.0.async_call_mut(|v| v.set_color(color)).await??)
+    pub async fn set_color(&self, color: Color) -> crate::Result<Option<()>> {
+        self.0
+            .async_call_mut(|v| v.set_color(color))
+            .await
+            .transpose()
     }
-    pub async fn set_size(&self, size: Vector2) -> crate::Result<()> {
-        Ok(self.0.async_call_mut(|v| v.set_size(size)).await??)
+    pub async fn set_size(&self, size: Vector2) -> crate::Result<Option<()>> {
+        self.0
+            .async_call_mut(|v| v.set_size(size))
+            .await
+            .transpose()
     }
 }

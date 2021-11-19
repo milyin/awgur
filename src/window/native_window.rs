@@ -137,7 +137,7 @@ impl Window {
                 let (x, y) = get_mouse_position(lparam);
                 // self.game.on_pointer_moved(&point).unwrap();
                 self.slot
-                    .translate_window_event(WindowEvent::CursorMoved {
+                    .send_window_event(WindowEvent::CursorMoved {
                         device_id: unsafe { DeviceId::dummy() },
                         position: PhysicalPosition {
                             x: x as f64,
@@ -150,7 +150,7 @@ impl Window {
             WM_SIZE | WM_SIZING => {
                 let size = self.size().unwrap();
                 self.slot
-                    .translate_window_event(WindowEvent::Resized((size.Width, size.Height).into()))
+                    .send_window_event(WindowEvent::Resized((size.Width, size.Height).into()))
                     .unwrap();
             }
             WM_LBUTTONDOWN => {

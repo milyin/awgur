@@ -1,4 +1,4 @@
-use super::{spawn_translate_window_events, Slot, SlotPlug, SlotTag, TranslateWindowEvent};
+use super::{FromVector2, IntoVector2, Slot, SlotPlug, SlotTag, TranslateWindowEvent, spawn_translate_window_events};
 use async_object::{Keeper, Tag};
 use async_trait::async_trait;
 use futures::task::Spawn;
@@ -65,19 +65,6 @@ impl Cell {
         point.X -= offset.X;
         point.Y -= offset.Y;
         Ok(point)
-    }
-    fn translate_physical_position(
-        &self,
-        mut point: PhysicalPosition<f64>,
-    ) -> crate::Result<PhysicalPosition<f64>> {
-        let point = self.translate_point(Vector2 {
-            X: point.x as f32,
-            Y: point.y as f32,
-        })?;
-        Ok(PhysicalPosition {
-            x: point.X as f64,
-            y: point.Y as f64,
-        })
     }
     #[allow(dead_code)]
     fn is_translated_point_in_cell(&self, point: Vector2) -> crate::Result<bool> {
@@ -177,7 +164,7 @@ impl RibbonImpl {
     }
     fn translate_window_event_default(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
         for cell in &mut self.cells {
-            cell.slot.translate_window_event(event.clone())?;
+            cell.slot.send_window_event(event.clone())?;
         }
         Ok(())
     }
@@ -190,9 +177,8 @@ impl RibbonImpl {
         self.resize_cells(size)?;
         for cell in &mut self.cells {
             let size = cell.container.Size()?;
-            cell.slot.translate_window_event(WindowEvent::Resized(
-                (size.X as u32, size.Y as u32).into(),
-            ))?;
+            cell.slot
+                .send_window_event(WindowEvent::Resized((size.X as u32, size.Y as u32).into()))?;
         }
         Ok(())
     }
@@ -208,10 +194,10 @@ impl RibbonImpl {
             match event {
                 WindowEvent::CursorMoved {
                     ref mut position, ..
-                } => *position = cell.translate_physical_position(pos)?,
+                } => *position = cell.translate_point(pos.into_vector2())?.from_vector2(),
                 _ => {}
             };
-            cell.slot.translate_window_event(event)?;
+            cell.slot.send_window_event(event)?;
         }
         Ok(())
     }
@@ -327,16 +313,23 @@ fn adjust_cells(limits: Vec<CellLimit>, mut target: f32) -> Vec<f32> {
 pub struct TRibbon(Tag<RibbonImpl>);
 
 impl TRibbon {
-    pub async fn add_cell(&self, limit: CellLimit) -> crate::Result<SlotTag> {
-        self.0.async_call_mut(|v| v.add_cell(limit)).await?
+    pub async fn add_cell(&self, limit: CellLimit) -> crate::Result<Option<SlotTag>> {
+        self.0
+            .async_call_mut(|v| v.add_cell(limit))
+            .await
+            .transpose()
     }
 }
 
 #[async_trait]
 impl TranslateWindowEvent for TRibbon {
-    async fn translate_window_event(&self, event: WindowEvent<'static>) -> crate::Result<()> {
+    async fn translate_window_event(
+        &self,
+        event: WindowEvent<'static>,
+    ) -> crate::Result<Option<()>> {
         self.0
             .async_call_mut(|v| v.translate_window_event(event))
-            .await?
+            .await
+            .transpose()
     }
 }
