@@ -24,18 +24,24 @@ pub enum RibbonOrientation {
 #[derive(Copy, Clone, Debug)]
 pub struct CellLimit {
     pub ratio: f32,
-    pub content_ratio: Vector2,
     pub min_size: f32,
     pub max_size: Option<f32>,
+    pub content_ratio: Vector2,
 }
 
 impl CellLimit {
-    pub fn new(ratio: f32, content_ratio: Vector2, min_size: f32, max_size: Option<f32>) -> Self {
+    pub fn new(
+        ratio: f32,
+        min_size: f32,
+        max_size: Option<f32>,
+        content_ratio: Option<Vector2>,
+    ) -> Self {
+        let content_ratio = content_ratio.unwrap_or(Vector2 { X: 1., Y: 1. });
         Self {
             ratio,
-            content_ratio,
             min_size,
             max_size,
+            content_ratio,
         }
     }
 
@@ -49,9 +55,9 @@ impl Default for CellLimit {
     fn default() -> Self {
         Self {
             ratio: 1.,
-            content_ratio: Vector2::new(1., 1.),
             min_size: 0.,
             max_size: None,
+            content_ratio: Vector2::new(1., 1.),
         }
     }
 }
@@ -86,7 +92,7 @@ impl Cell {
 
 pub struct RibbonImpl {
     compositor: Compositor,
-    _slot: SlotPlug,
+    slot_plug: SlotPlug,
     container: ContainerVisual,
     orientation: RibbonOrientation,
     cells: Vec<Cell>,
@@ -101,10 +107,10 @@ impl RibbonImpl {
     ) -> crate::Result<Self> {
         let compositor = compositor.clone();
         let container = compositor.CreateContainerVisual()?;
-        let slot = slot.plug(container.clone().into())?;
+        let slot_plug = slot.plug(container.clone().into())?;
         Ok(Self {
             compositor,
-            _slot: slot,
+            slot_plug,
             container,
             orientation,
             cells: Vec::new(),
@@ -114,7 +120,14 @@ impl RibbonImpl {
 
     fn add_cell(&mut self, limit: CellLimit) -> crate::Result<SlotTag> {
         let container = self.compositor.CreateContainerVisual()?;
-        let slot = Slot::new(container.clone())?;
+        let slot = Slot::new(
+            container.clone(),
+            format!(
+                "{}/Ribbon_{}",
+                self.slot_plug.tag().name(),
+                self.cells.len() + 1
+            ),
+        )?;
         self.container.Children()?.InsertAtTop(container.clone())?;
         let tslot = slot.tag();
         self.cells.push(Cell {
@@ -196,7 +209,6 @@ impl RibbonImpl {
         self.mouse_pos = Some(mouse_pos);
         for cell in &mut self.cells {
             let mut event = event.clone();
-            let pos = position;
             match event {
                 WindowEvent::CursorMoved {
                     ref mut position, ..
@@ -271,19 +283,19 @@ impl Ribbon {
         slot: SlotTag,
         orientation: RibbonOrientation,
     ) -> crate::Result<Self> {
-        let keeper = Self(Keeper::new(RibbonImpl::new(
+        let ribbon = Self(Keeper::new(RibbonImpl::new(
             compositor,
             slot.clone(),
             orientation,
         )?));
-        spawn_translate_window_events(spawner, slot, keeper.tag())?;
-        Ok(keeper)
+        spawn_translate_window_events(spawner, slot, ribbon.tag())?;
+        Ok(ribbon)
     }
     pub fn tag(&self) -> TRibbon {
         TRibbon(self.0.tag())
     }
     pub fn add_cell(&mut self, limit: CellLimit) -> crate::Result<SlotTag> {
-        self.0.get_mut().add_cell(limit)
+        self.0.write(|v| v.add_cell(limit))
     }
 }
 
@@ -356,5 +368,11 @@ impl TranslateWindowEvent for TRibbon {
             .async_call_mut(|v| v.translate_window_event(event))
             .await
             .transpose()
+    }
+    async fn name(&self) -> String {
+        self.0
+            .async_call(|v| v.slot_plug.tag().name())
+            .await
+            .unwrap_or("(dropped)".into())
     }
 }

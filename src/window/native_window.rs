@@ -81,7 +81,7 @@ impl Window {
             X: width as f32,
             Y: height as f32,
         })?;
-        let slot = Slot::new(root_visual.clone())?;
+        let slot = Slot::new(root_visual.clone(), "".into())?;
         let mut result = Box::new(Self {
             handle: HWND(0),
             target: None,

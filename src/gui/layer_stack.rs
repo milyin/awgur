@@ -12,18 +12,18 @@ struct LayerStackImpl {
     slots: Vec<Slot>,
     compositor: Compositor,
     visual: ContainerVisual,
-    _slot_plug: SlotPlug,
+    slot_plug: SlotPlug,
 }
 
 impl LayerStackImpl {
     fn new(compositor: &Compositor, slot: &SlotTag) -> crate::Result<Self> {
         let visual = compositor.CreateContainerVisual()?;
-        let _slot_plug = slot.plug(visual.clone().into())?;
+        let slot_plug = slot.plug(visual.clone().into())?;
         Ok(Self {
             slots: Vec::new(),
             compositor: compositor.clone(),
             visual,
-            _slot_plug,
+            slot_plug,
         })
     }
 
@@ -31,7 +31,14 @@ impl LayerStackImpl {
         let container = self.compositor.CreateContainerVisual()?;
         container.SetSize(self.visual.Size()?)?;
         self.visual.Children()?.InsertAtTop(container.clone())?;
-        let slot_keeper = Slot::new(container)?;
+        let slot_keeper = Slot::new(
+            container,
+            format!(
+                "{}/LayerStack_{}",
+                self.slot_plug.tag().name(),
+                self.slots.len() + 1
+            ),
+        )?;
         let slot = slot_keeper.tag();
         self.slots.push(slot_keeper);
         Ok(slot)
@@ -40,7 +47,7 @@ impl LayerStackImpl {
     fn remove_layer(&mut self, slot: SlotTag) -> crate::Result<()> {
         if let Some(index) = self.slots.iter().position(|v| v.tag() == slot) {
             let slot = self.slots.remove(index);
-            self.visual.Children()?.Remove(slot.container()?)?;
+            self.visual.Children()?.Remove(slot.container())?;
         }
         Ok(())
     }
@@ -105,7 +112,7 @@ impl LayerStack {
         TLayerStack(self.0.tag())
     }
     pub fn add_layer(&mut self) -> crate::Result<SlotTag> {
-        self.0.get_mut().add_layer()
+        self.0.write(|v| v.add_layer())
     }
 }
 
@@ -134,5 +141,11 @@ impl TranslateWindowEvent for TLayerStack {
             .async_call_mut(|v| v.translate_window_event(event))
             .await
             .transpose()
+    }
+    async fn name(&self) -> String {
+        self.0
+            .async_call(|v| v.slot_plug.tag().name())
+            .await
+            .unwrap_or("(dropped)".into())
     }
 }

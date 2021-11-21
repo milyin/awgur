@@ -116,9 +116,9 @@ impl Background {
     }
     fn spawn_event_handlers(&self, spawner: impl Spawn) -> crate::Result<()> {
         let tag = self.tag();
-        let slot = self.0.get().slot.tag();
+        let slot = self.0.read(|v| v.slot.tag());
         let func = unwrap_err(async move {
-            while let Some(size) = slot.on_slot_resize().next().await {
+            while let Some(size) = slot.on_slot_resized().next().await {
                 tag.set_size(size.0).await?;
             }
             Ok(())
