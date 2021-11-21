@@ -4,7 +4,6 @@ use futures::{
     task::{Spawn, SpawnExt},
     StreamExt,
 };
-use std::sync::{Arc, RwLock};
 use windows::{
     Foundation::Numerics::Vector2,
     UI::Composition::{ContainerVisual, Visual},
@@ -15,12 +14,12 @@ use crate::unwrap_err;
 
 use super::{FromVector2, IntoVector2};
 
-pub struct SlotShared {
+pub struct SlotImpl {
     container: ContainerVisual,
     name: String,
 }
 
-impl SlotShared {
+impl SlotImpl {
     pub fn new(container: ContainerVisual, name: String) -> Self {
         Self { container, name }
     }
@@ -47,21 +46,18 @@ impl Drop for SlotPlug {
     }
 }
 
-pub struct Slot(Keeper<(), SlotShared>);
+pub struct Slot(Keeper<SlotImpl>);
 
 impl Slot {
     pub fn new(container: ContainerVisual, name: String) -> crate::Result<Self> {
-        let keeper = Self(Keeper::new_with_shared(
-            (),
-            Arc::new(RwLock::new(SlotShared::new(container, name))),
-        ));
+        let keeper = Self(Keeper::new(SlotImpl::new(container, name)));
         Ok(keeper)
     }
     pub fn tag(&self) -> SlotTag {
         SlotTag(self.0.tag())
     }
     pub fn container(&self) -> ContainerVisual {
-        self.0.read_shared(|v| v.container.clone())
+        self.0.read(|v| v.container.clone())
     }
     pub fn resize(&mut self, size: Vector2) -> crate::Result<()> {
         self.container().SetSize(size)?;
@@ -96,7 +92,7 @@ pub struct SlotMouseInput;
 pub struct SlotCursorMoved(pub Vector2);
 
 #[derive(Clone, PartialEq, Default)]
-pub struct SlotTag(Tag<(), SlotShared>);
+pub struct SlotTag(Tag<SlotImpl>);
 
 impl SlotTag {
     pub async fn wait_for_destroy(&self) -> crate::Result<()> {
@@ -117,11 +113,11 @@ impl SlotTag {
         EventStream::new(self.0.clone())
     }
     pub fn slot_container(&self) -> Option<ContainerVisual> {
-        self.0.read_shared(|v| v.container.clone())
+        self.0.read(|v| v.container.clone())
     }
     pub fn name(&self) -> String {
         self.0
-            .read_shared(|v| v.name.clone())
+            .read(|v| v.name.clone())
             .unwrap_or("(dropped)/".into())
     }
     pub fn plug(&self, visual: Visual) -> crate::Result<SlotPlug> {

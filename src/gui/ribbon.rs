@@ -351,10 +351,7 @@ pub struct TRibbon(Tag<RibbonImpl>);
 
 impl TRibbon {
     pub async fn add_cell(&self, limit: CellLimit) -> crate::Result<Option<SlotTag>> {
-        self.0
-            .async_call_mut(|v| v.add_cell(limit))
-            .await
-            .transpose()
+        self.0.async_write(|v| v.add_cell(limit)).await.transpose()
     }
 }
 
@@ -365,13 +362,13 @@ impl TranslateWindowEvent for TRibbon {
         event: WindowEvent<'static>,
     ) -> crate::Result<Option<()>> {
         self.0
-            .async_call_mut(|v| v.translate_window_event(event))
+            .async_write(|v| v.translate_window_event(event))
             .await
             .transpose()
     }
     async fn name(&self) -> String {
         self.0
-            .async_call(|v| v.slot_plug.tag().name())
+            .async_read(|v| v.slot_plug.tag().name())
             .await
             .unwrap_or("(dropped)".into())
     }

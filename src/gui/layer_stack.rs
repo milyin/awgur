@@ -121,11 +121,11 @@ pub struct TLayerStack(Tag<LayerStackImpl>);
 
 impl TLayerStack {
     pub async fn add_layer(&self) -> crate::Result<Option<SlotTag>> {
-        self.0.async_call_mut(|v| v.add_layer()).await.transpose()
+        self.0.async_write(|v| v.add_layer()).await.transpose()
     }
     pub async fn remove_layer(&self, slot: SlotTag) -> crate::Result<Option<()>> {
         self.0
-            .async_call_mut(|v| v.remove_layer(slot))
+            .async_write(|v| v.remove_layer(slot))
             .await
             .transpose()
     }
@@ -138,13 +138,13 @@ impl TranslateWindowEvent for TLayerStack {
         event: WindowEvent<'static>,
     ) -> crate::Result<Option<()>> {
         self.0
-            .async_call_mut(|v| v.translate_window_event(event))
+            .async_write(|v| v.translate_window_event(event))
             .await
             .transpose()
     }
     async fn name(&self) -> String {
         self.0
-            .async_call(|v| v.slot_plug.tag().name())
+            .async_read(|v| v.slot_plug.tag().name())
             .await
             .unwrap_or("(dropped)".into())
     }

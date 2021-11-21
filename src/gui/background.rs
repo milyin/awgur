@@ -132,21 +132,15 @@ pub struct TBackground(Tag<BackgroundIimpl>);
 
 impl TBackground {
     pub async fn round_corners(&self) -> Option<bool> {
-        self.0.async_call(|v| v.round_corners).await
+        self.0.async_read(|v| v.round_corners).await
     }
     pub async fn color(&self) -> Option<Color> {
-        self.0.async_call(|v| v.color).await
+        self.0.async_read(|v| v.color).await
     }
     pub async fn set_color(&self, color: Color) -> crate::Result<Option<()>> {
-        self.0
-            .async_call_mut(|v| v.set_color(color))
-            .await
-            .transpose()
+        self.0.async_write(|v| v.set_color(color)).await.transpose()
     }
     pub async fn set_size(&self, size: Vector2) -> crate::Result<Option<()>> {
-        self.0
-            .async_call_mut(|v| v.set_size(size))
-            .await
-            .transpose()
+        self.0.async_write(|v| v.set_size(size)).await.transpose()
     }
 }
