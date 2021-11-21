@@ -23,6 +23,12 @@ impl SlotImpl {
     pub fn new(container: ContainerVisual, name: String) -> Self {
         Self { container, name }
     }
+    pub fn plug(&mut self, visual: &Visual) -> crate::Result<()> {
+        let size = self.container.Size()?;
+        visual.SetSize(size)?;
+        self.container.Children()?.InsertAtTop(visual.clone())?;
+        Ok(())
+    }
 }
 
 pub struct SlotPlug {
@@ -121,11 +127,7 @@ impl SlotTag {
             .unwrap_or("(dropped)/".into())
     }
     pub fn plug(&self, visual: Visual) -> crate::Result<SlotPlug> {
-        if let Some(ref slot_container) = self.slot_container() {
-            let size = slot_container.Size()?;
-            visual.SetSize(size)?;
-            slot_container.Children()?.InsertAtTop(visual.clone())?;
-        }
+        self.0.write(|v| v.plug(&visual));
         Ok(SlotPlug {
             slot_tag: self.clone(),
             plugged_visual: visual,
