@@ -1,8 +1,8 @@
 use super::{
     is_translated_point_in_box, spawn_translate_window_events, FromVector2, IntoVector2, Slot,
-    SlotPlug, SlotTag, TranslateWindowEvent,
+    SlotPlug, TranslateWindowEvent,
 };
-use async_object::{Keeper, Tag};
+use async_object::{run, Tag};
 use async_trait::async_trait;
 use futures::task::Spawn;
 use windows::{
@@ -85,7 +85,7 @@ impl Cell {
             Y: offset.Y,
             Z: 0.,
         })?;
-        self.slot.resize(size)?;
+        self.slot.resize_sync(size)?;
         Ok(())
     }
 }
@@ -102,7 +102,7 @@ pub struct RibbonImpl {
 impl RibbonImpl {
     fn new(
         compositor: &Compositor,
-        slot: SlotTag,
+        slot: Slot,
         orientation: RibbonOrientation,
     ) -> crate::Result<Self> {
         let compositor = compositor.clone();
@@ -118,25 +118,25 @@ impl RibbonImpl {
         })
     }
 
-    fn add_cell(&mut self, limit: CellLimit) -> crate::Result<SlotTag> {
+    fn add_cell(&mut self, pool: impl Spawn, limit: CellLimit) -> crate::Result<Slot> {
         let container = self.compositor.CreateContainerVisual()?;
         let slot = Slot::new(
+            pool,
             container.clone(),
             format!(
                 "{}/Ribbon_{}",
-                self.slot_plug.tag().name(),
+                self.slot_plug.slot().name(),
                 self.cells.len() + 1
             ),
         )?;
         self.container.Children()?.InsertAtTop(container.clone())?;
-        let tslot = slot.tag();
         self.cells.push(Cell {
-            slot,
+            slot: slot.clone(),
             container,
             limit,
         });
         self.resize_cells(self.container.Size()?)?;
-        Ok(tslot)
+        Ok(slot)
     }
 
     fn resize_cells(&mut self, size: Vector2) -> crate::Result<()> {
@@ -181,7 +181,7 @@ impl RibbonImpl {
     }
     fn translate_window_event_default(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
         for cell in &mut self.cells {
-            cell.slot.send_window_event(event.clone())?;
+            cell.slot.send_window_event_sync(event.clone())?;
         }
         Ok(())
     }
@@ -194,8 +194,9 @@ impl RibbonImpl {
         self.resize_cells(size)?;
         for cell in &mut self.cells {
             let size = cell.container.Size()?;
-            cell.slot
-                .send_window_event(WindowEvent::Resized((size.X as u32, size.Y as u32).into()))?;
+            cell.slot.send_window_event_sync(WindowEvent::Resized(
+                (size.X as u32, size.Y as u32).into(),
+            ))?;
         }
         Ok(())
     }
@@ -215,7 +216,7 @@ impl RibbonImpl {
                 } => *position = cell.translate_point(mouse_pos)?.from_vector2(),
                 _ => {}
             };
-            cell.slot.send_window_event(event)?;
+            cell.slot.send_window_event_sync(event)?;
         }
         Ok(())
     }
@@ -229,7 +230,7 @@ impl RibbonImpl {
                 let mouse_pos = cell.translate_point(mouse_pos)?;
                 if cell.is_translated_point_in_cell(mouse_pos)? {
                     let event = event.clone();
-                    cell.slot.send_window_event(event)?;
+                    cell.slot.send_window_event_sync(event)?;
                 }
             }
         }
@@ -274,28 +275,39 @@ impl RibbonImpl {
 //     Ok(())
 // }
 
-pub struct Ribbon(Keeper<RibbonImpl>);
+#[derive(Clone)]
+pub struct Ribbon(Tag<RibbonImpl>);
 
 impl Ribbon {
     pub fn new(
-        spawner: impl Spawn,
+        spawner: impl Spawn + Clone,
         compositor: &Compositor,
-        slot: SlotTag,
+        slot: Slot,
         orientation: RibbonOrientation,
     ) -> crate::Result<Self> {
-        let ribbon = Self(Keeper::new(RibbonImpl::new(
-            compositor,
-            slot.clone(),
-            orientation,
-        )?));
-        spawn_translate_window_events(spawner, slot, ribbon.tag())?;
+        let ribbon = Self(run(
+            spawner.clone(),
+            RibbonImpl::new(compositor, slot.clone(), orientation)?,
+        )?);
+        spawn_translate_window_events(spawner, slot, ribbon.clone())?;
         Ok(ribbon)
     }
-    pub fn tag(&self) -> TRibbon {
-        TRibbon(self.0.tag())
+    pub fn add_cell_sync(
+        &mut self,
+        pool: impl Spawn,
+        limit: CellLimit,
+    ) -> crate::Result<Option<Slot>> {
+        self.0.write(|v| v.add_cell(pool, limit)).transpose()
     }
-    pub fn add_cell(&mut self, limit: CellLimit) -> crate::Result<SlotTag> {
-        self.0.write(|v| v.add_cell(limit))
+    pub async fn add_cell(
+        &self,
+        pool: impl Spawn,
+        limit: CellLimit,
+    ) -> crate::Result<Option<Slot>> {
+        self.0
+            .async_write(|v| v.add_cell(pool, limit))
+            .await
+            .transpose()
     }
 }
 
@@ -346,17 +358,8 @@ fn adjust_cells(limits: Vec<CellLimit>, mut target: f32) -> Vec<f32> {
     result
 }
 
-#[derive(Clone, PartialEq)]
-pub struct TRibbon(Tag<RibbonImpl>);
-
-impl TRibbon {
-    pub async fn add_cell(&self, limit: CellLimit) -> crate::Result<Option<SlotTag>> {
-        self.0.async_write(|v| v.add_cell(limit)).await.transpose()
-    }
-}
-
 #[async_trait]
-impl TranslateWindowEvent for TRibbon {
+impl TranslateWindowEvent for Ribbon {
     async fn translate_window_event(
         &self,
         event: WindowEvent<'static>,
@@ -368,7 +371,7 @@ impl TranslateWindowEvent for TRibbon {
     }
     async fn name(&self) -> String {
         self.0
-            .async_read(|v| v.slot_plug.tag().name())
+            .async_read(|v| v.slot_plug.slot().name())
             .await
             .unwrap_or("(dropped)".into())
     }

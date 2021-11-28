@@ -1,5 +1,6 @@
 use std::sync::Once;
 
+use futures::task::Spawn;
 use windows::{
     core::{self, Handle, Interface},
     Foundation::Numerics::Vector2,
@@ -23,10 +24,7 @@ use winit::{
     event::{DeviceId, ElementState, ModifiersState, MouseButton, WindowEvent},
 };
 
-use crate::{
-    gui::{Slot, SlotTag},
-    window::wide_string::ToWide,
-};
+use crate::{gui::Slot, window::wide_string::ToWide};
 
 static REGISTER_WINDOW_CLASS: Once = Once::new();
 static WINDOW_CLASS_NAME: &str = "awgur.Window";
@@ -41,6 +39,7 @@ pub struct Window {
 
 impl Window {
     pub fn new(
+        pool: impl Spawn,
         compositor: &Compositor,
         title: &str,
         width: u32,
@@ -81,7 +80,7 @@ impl Window {
             X: width as f32,
             Y: height as f32,
         })?;
-        let slot = Slot::new(root_visual.clone(), "".into())?;
+        let slot = Slot::new(pool, root_visual.clone(), "".into())?;
         let mut result = Box::new(Self {
             handle: HWND(0),
             target: None,
@@ -137,7 +136,7 @@ impl Window {
                 let (x, y) = get_mouse_position(lparam);
                 // self.game.on_pointer_moved(&point).unwrap();
                 self.slot
-                    .send_window_event(WindowEvent::CursorMoved {
+                    .send_window_event_sync(WindowEvent::CursorMoved {
                         device_id: unsafe { DeviceId::dummy() },
                         position: PhysicalPosition {
                             x: x as f64,
@@ -150,12 +149,12 @@ impl Window {
             WM_SIZE | WM_SIZING => {
                 let size = self.size().unwrap();
                 self.slot
-                    .send_window_event(WindowEvent::Resized((size.Width, size.Height).into()))
+                    .send_window_event_sync(WindowEvent::Resized((size.Width, size.Height).into()))
                     .unwrap();
             }
             WM_LBUTTONDOWN => {
                 self.slot
-                    .send_window_event(WindowEvent::MouseInput {
+                    .send_window_event_sync(WindowEvent::MouseInput {
                         device_id: unsafe { DeviceId::dummy() },
                         state: ElementState::Pressed,
                         button: MouseButton::Left,
@@ -207,8 +206,8 @@ impl Window {
         &self.root_visual
     }
 
-    pub fn slot(&self) -> SlotTag {
-        self.slot.tag()
+    pub fn slot(&self) -> Slot {
+        self.slot.clone()
     }
 }
 

@@ -1,6 +1,6 @@
 use futures::{executor::ThreadPool, StreamExt};
 use wag::{
-    gui::{Background, CellLimit, LayerStack, Ribbon, RibbonOrientation, TBackground},
+    gui::{Background, CellLimit, LayerStack, Ribbon, RibbonOrientation},
     unwrap_err,
     window::{
         initialize_window_thread,
@@ -17,9 +17,9 @@ fn main() -> wag::Result<()> {
     let pool = ThreadPool::builder() //.pool_size(8)
         .create()?;
     let compositor = Compositor::new()?;
-    let window = Window::new(&compositor, "demo", 800, 600)?;
+    let window = Window::new(pool.clone(), &compositor, "demo", 800, 600)?;
     let mut layer_stack = LayerStack::new(pool.clone(), &compositor, &window.slot())?;
-    let layer = layer_stack.add_layer()?;
+    let layer = layer_stack.add_layer_sync(pool.clone())?.unwrap();
 
     let mut vribbon = Ribbon::new(
         pool.clone(),
@@ -31,15 +31,17 @@ fn main() -> wag::Result<()> {
     let mut hribbon = Ribbon::new(
         pool.clone(),
         &compositor,
-        vribbon.add_cell(CellLimit::new(4., 100., None, None))?,
+        vribbon
+            .add_cell_sync(pool.clone(), CellLimit::new(4., 100., None, None))?
+            .unwrap(),
         RibbonOrientation::Horizontal,
     )?;
-    let button_slot = vribbon.add_cell(CellLimit::new(
-        1.,
-        50.,
-        Some(300.),
-        Some(Vector2 { X: 0.5, Y: 0.8 }),
-    ))?;
+    let button_slot = vribbon
+        .add_cell_sync(
+            pool.clone(),
+            CellLimit::new(1., 50., Some(300.), Some(Vector2 { X: 0.5, Y: 0.8 })),
+        )?
+        .unwrap();
     let _button = Background::new(
         pool.clone(),
         &compositor,
@@ -47,9 +49,15 @@ fn main() -> wag::Result<()> {
         Colors::Pink()?,
         true,
     )?;
-    let red_slot = hribbon.add_cell(CellLimit::default())?;
-    let green_slot = hribbon.add_cell(CellLimit::default())?;
-    let blue_slot = hribbon.add_cell(CellLimit::default())?;
+    let red_slot = hribbon
+        .add_cell_sync(pool.clone(), CellLimit::default())?
+        .unwrap();
+    let green_slot = hribbon
+        .add_cell_sync(pool.clone(), CellLimit::default())?
+        .unwrap();
+    let blue_slot = hribbon
+        .add_cell_sync(pool.clone(), CellLimit::default())?
+        .unwrap();
     let red_surface = Background::new(
         pool.clone(),
         &compositor,
@@ -74,9 +82,9 @@ fn main() -> wag::Result<()> {
     )?;
 
     async fn rotate_background_colors(
-        a: &TBackground,
-        b: &TBackground,
-        c: &TBackground,
+        a: &Background,
+        b: &Background,
+        c: &Background,
     ) -> wag::Result<()> {
         let ca = a.color().await;
         let cb = b.color().await;
@@ -88,11 +96,11 @@ fn main() -> wag::Result<()> {
         }
         Ok(())
     }
-    
+
     pool.spawn_ok(unwrap_err({
-        let a = red_surface.tag();
-        let b = green_surface.tag();
-        let c = blue_surface.tag();
+        let a = red_surface.clone();
+        let b = green_surface.clone();
+        let c = blue_surface.clone();
         async move {
             while let Some(_) = button_slot.on_slot_mouse_input().next().await {
                 rotate_background_colors(&a, &b, &c).await?;

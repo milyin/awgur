@@ -1,4 +1,4 @@
-use async_object::{Keeper, Tag};
+use async_object::{run, Tag};
 use float_ord::FloatOrd;
 use futures::{
     task::{Spawn, SpawnExt},
@@ -12,7 +12,8 @@ use windows::{
     },
 };
 
-use crate::gui::{SlotPlug, SlotTag};
+use crate::gui::Slot;
+use crate::gui::SlotPlug;
 use crate::unwrap_err;
 
 pub struct BackgroundIimpl {
@@ -26,7 +27,7 @@ pub struct BackgroundIimpl {
 impl BackgroundIimpl {
     fn new(
         compositor: &Compositor,
-        slot: SlotTag,
+        slot: Slot,
         color: Color,
         round_corners: bool,
     ) -> crate::Result<Self> {
@@ -91,46 +92,37 @@ impl BackgroundIimpl {
     }
 }
 
-pub struct Background(Keeper<BackgroundIimpl>);
+#[derive(Clone)]
+pub struct Background(Tag<BackgroundIimpl>);
 
 impl Background {
     pub fn new(
-        spawner: impl Spawn,
+        spawner: impl Spawn + Clone,
         compositor: &Compositor,
-        slot: SlotTag,
+        slot: Slot,
         color: Color,
         round_corners: bool,
     ) -> crate::Result<Self> {
-        let keeper = Keeper::new(BackgroundIimpl::new(
-            compositor,
-            slot,
-            color,
-            round_corners,
+        let background = Self(run(
+            spawner.clone(),
+            BackgroundIimpl::new(compositor, slot, color, round_corners)?,
         )?);
-        let keeper = Self(keeper);
-        keeper.spawn_event_handlers(spawner)?;
-        Ok(keeper)
+        background.clone().spawn_event_handlers(spawner)?;
+        Ok(background)
     }
-    pub fn tag(&self) -> TBackground {
-        TBackground(self.0.tag())
-    }
-    fn spawn_event_handlers(&self, spawner: impl Spawn) -> crate::Result<()> {
-        let tag = self.tag();
-        let slot = self.0.read(|v| v.slot.tag());
+    fn spawn_event_handlers(self, spawner: impl Spawn) -> crate::Result<()> {
+        let backgorund = self.clone();
+        let slot = self.0.read(|v| v.slot.slot()).unwrap();
         let func = unwrap_err(async move {
-            while let Some(size) = slot.on_slot_resized().next().await {
-                tag.set_size(size.0).await?;
+            let mut stream = slot.on_slot_resized();
+            while let Some(size) = stream.next().await {
+                backgorund.set_size(size.as_ref().0).await?;
             }
             Ok(())
         });
         spawner.spawn(func)?;
         Ok(())
     }
-}
-#[derive(Clone, PartialEq)]
-pub struct TBackground(Tag<BackgroundIimpl>);
-
-impl TBackground {
     pub async fn round_corners(&self) -> Option<bool> {
         self.0.async_read(|v| v.round_corners).await
     }
