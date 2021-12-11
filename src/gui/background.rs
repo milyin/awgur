@@ -14,6 +14,7 @@ use windows::{
 
 use crate::gui::Slot;
 use crate::gui::SlotPlug;
+use crate::gui::WSlot;
 use crate::unwrap_err;
 
 #[async_object_decl(pub Background, pub WBackground)]
@@ -101,7 +102,7 @@ impl BackgroundIimpl {
         self.color
     }
 
-    fn slot(&self) -> Slot {
+    fn slot(&self) -> WSlot {
         self.slot.slot()
     }
 }
@@ -127,9 +128,10 @@ impl Background {
         let mut backgorund = self.clone();
         let slot = self.slot();
         let func = unwrap_err(async move {
-            let mut stream = slot.on_slot_resized();
-            while let Some(size) = stream.next().await {
-                backgorund.async_set_size(size.as_ref().0).await?;
+            if let Some(mut stream) = slot.upgrade().map(|v| v.on_slot_resized()) {
+                while let Some(size) = stream.next().await {
+                    backgorund.async_set_size(size.as_ref().0).await?;
+                }
             }
             Ok(())
         });

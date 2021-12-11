@@ -40,7 +40,10 @@ impl LayerStackImpl {
             container,
             format!(
                 "{}/LayerStack_{}",
-                self.slot_plug.slot().name(),
+                self.slot_plug
+                    .slot()
+                    .name()
+                    .unwrap_or("(dropped)".to_string()),
                 self.slots.len() + 1
             ),
         )?;
@@ -57,13 +60,13 @@ impl LayerStackImpl {
     }
     fn translate_event_to_all_layers(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
         for slot in &mut self.slots {
-            slot.send_window_event_sync(event.clone())?
+            slot.send_window_event(event.clone())?
         }
         Ok(())
     }
     fn translate_event_to_top_layer(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
         if let Some(slot) = self.slots.first_mut() {
-            slot.send_window_event_sync(event)?
+            slot.send_window_event(event)?
         }
         Ok(())
     }
@@ -113,7 +116,7 @@ impl LayerStack {
 
 #[async_trait]
 impl TranslateWindowEvent for WLayerStack {
-    async fn translate_window_event(
+    async fn async_translate_window_event(
         &mut self,
         event: WindowEvent<'static>,
     ) -> crate::Result<Option<()>> {

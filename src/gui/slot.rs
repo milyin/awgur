@@ -44,22 +44,23 @@ impl SlotImpl {
 }
 
 pub struct SlotPlug {
-    slot: Slot,
+    slot: WSlot,
     plugged_visual: Visual,
 }
 
 impl SlotPlug {
-    pub fn slot(&self) -> Slot {
+    pub fn slot(&self) -> WSlot {
         self.slot.clone()
     }
 }
 
 impl Drop for SlotPlug {
     fn drop(&mut self) {
-        let slot_container = self.slot().container();
-        let _ = slot_container
-            .Children()
-            .map(|c| c.Remove(&self.plugged_visual));
+        if let Some(slot_container) = self.slot().container() {
+            let _ = slot_container
+                .Children()
+                .map(|c| c.Remove(&self.plugged_visual));
+        }
     }
 }
 
@@ -68,16 +69,16 @@ impl Slot {
         let slot = Self::create(SlotImpl::new(container, name), pool)?;
         Ok(slot)
     }
-    pub fn resize_sync(&mut self, size: Vector2) -> crate::Result<()> {
+    pub fn resize(&mut self, size: Vector2) -> crate::Result<()> {
         println!("{} {},{}", self.name(), size.X, size.Y);
         self.container().SetSize(size)?;
         self.send_event(SlotResized(size));
         self.send_event(WindowEvent::Resized(size.from_vector2()));
         Ok(())
     }
-    pub fn send_window_event_sync(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
+    pub fn send_window_event(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
         match event {
-            WindowEvent::Resized(size) => self.resize_sync(size.into_vector2())?,
+            WindowEvent::Resized(size) => self.resize(size.into_vector2())?,
             WindowEvent::CursorMoved { position, .. } => {
                 self.send_event(SlotCursorMoved(position.into_vector2()));
                 self.send_event(event);
@@ -90,7 +91,7 @@ impl Slot {
         }
         Ok(())
     }
-    pub async fn wait_for_destroy(&self) -> crate::Result<()> {
+    pub async fn async_wait_for_destroy(&self) -> crate::Result<()> {
         let mut stream = self.create_event_stream::<()>();
         while let Some(_) = stream.next().await {}
         Ok(())
@@ -118,7 +119,7 @@ impl Slot {
     pub fn plug(&mut self, visual: Visual) -> crate::Result<SlotPlug> {
         self.plug_internal(&visual)?;
         Ok(SlotPlug {
-            slot: self.clone(),
+            slot: self.downgrade(),
             plugged_visual: visual,
         })
     }
@@ -135,7 +136,7 @@ pub struct SlotCursorMoved(pub Vector2);
 
 #[async_trait]
 pub trait TranslateWindowEvent {
-    async fn translate_window_event(
+    async fn async_translate_window_event(
         &mut self,
         event: WindowEvent<'static>,
     ) -> crate::Result<Option<()>>;
@@ -149,7 +150,7 @@ pub fn spawn_translate_window_events(
     let future = async move {
         while let Some(event) = source.on_window_event().next().await {
             if destination
-                .translate_window_event(event.as_ref().clone())
+                .async_translate_window_event(event.as_ref().clone())
                 .await?
                 .is_none()
             {

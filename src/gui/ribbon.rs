@@ -85,7 +85,7 @@ impl Cell {
             Y: offset.Y,
             Z: 0.,
         })?;
-        self.slot.resize_sync(size)?;
+        self.slot.resize(size)?;
         Ok(())
     }
 }
@@ -129,7 +129,10 @@ impl RibbonImpl {
             container.clone(),
             format!(
                 "{}/Ribbon_{}",
-                self.slot_plug.slot().name(),
+                self.slot_plug
+                    .slot()
+                    .name()
+                    .unwrap_or("(dropped)".to_string()),
                 self.cells.len() + 1
             ),
         )?;
@@ -185,7 +188,7 @@ impl RibbonImpl {
     }
     fn translate_window_event_default(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
         for cell in &mut self.cells {
-            cell.slot.send_window_event_sync(event.clone())?;
+            cell.slot.send_window_event(event.clone())?;
         }
         Ok(())
     }
@@ -198,9 +201,8 @@ impl RibbonImpl {
         self.resize_cells(size)?;
         for cell in &mut self.cells {
             let size = cell.container.Size()?;
-            cell.slot.send_window_event_sync(WindowEvent::Resized(
-                (size.X as u32, size.Y as u32).into(),
-            ))?;
+            cell.slot
+                .send_window_event(WindowEvent::Resized((size.X as u32, size.Y as u32).into()))?;
         }
         Ok(())
     }
@@ -220,7 +222,7 @@ impl RibbonImpl {
                 } => *position = cell.translate_point(mouse_pos)?.from_vector2(),
                 _ => {}
             };
-            cell.slot.send_window_event_sync(event)?;
+            cell.slot.send_window_event(event)?;
         }
         Ok(())
     }
@@ -234,7 +236,7 @@ impl RibbonImpl {
                 let mouse_pos = cell.translate_point(mouse_pos)?;
                 if cell.is_translated_point_in_cell(mouse_pos)? {
                     let event = event.clone();
-                    cell.slot.send_window_event_sync(event)?;
+                    cell.slot.send_window_event(event)?;
                 }
             }
         }
@@ -341,7 +343,7 @@ fn adjust_cells(limits: Vec<CellLimit>, mut target: f32) -> Vec<f32> {
 
 #[async_trait]
 impl TranslateWindowEvent for WRibbon {
-    async fn translate_window_event(
+    async fn async_translate_window_event(
         &mut self,
         event: WindowEvent<'static>,
     ) -> crate::Result<Option<()>> {
