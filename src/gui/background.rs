@@ -1,4 +1,4 @@
-use async_object::{run, Tag};
+use async_object_derive::{async_object_decl, async_object_impl};
 use float_ord::FloatOrd;
 use futures::{
     task::{Spawn, SpawnExt},
@@ -16,6 +16,7 @@ use crate::gui::Slot;
 use crate::gui::SlotPlug;
 use crate::unwrap_err;
 
+#[async_object_decl(pub Background, pub WBackground)]
 pub struct BackgroundIimpl {
     compositor: Compositor,
     slot: SlotPlug,
@@ -27,7 +28,7 @@ pub struct BackgroundIimpl {
 impl BackgroundIimpl {
     fn new(
         compositor: &Compositor,
-        slot: Slot,
+        mut slot: Slot,
         color: Color,
         round_corners: bool,
     ) -> crate::Result<Self> {
@@ -44,19 +45,6 @@ impl BackgroundIimpl {
         background.redraw()?;
         Ok(background)
     }
-
-    fn set_color(&mut self, color: Color) -> crate::Result<()> {
-        self.color = color;
-        self.redraw()?;
-        Ok(())
-    }
-
-    fn set_size(&mut self, size: Vector2) -> crate::Result<()> {
-        self.shape.SetSize(size)?;
-        self.redraw()?;
-        Ok(())
-    }
-
     fn redraw(&self) -> crate::Result<()> {
         self.shape.Shapes()?.Clear()?;
         self.shape
@@ -92,8 +80,31 @@ impl BackgroundIimpl {
     }
 }
 
-#[derive(Clone)]
-pub struct Background(Tag<BackgroundIimpl>);
+#[async_object_impl(Background, WBackground)]
+impl BackgroundIimpl {
+    pub fn set_color(&mut self, color: Color) -> crate::Result<()> {
+        self.color = color;
+        self.redraw()?;
+        Ok(())
+    }
+
+    pub fn set_size(&mut self, size: Vector2) -> crate::Result<()> {
+        self.shape.SetSize(size)?;
+        self.redraw()?;
+        Ok(())
+    }
+
+    pub fn round_corners(&self) -> bool {
+        self.round_corners
+    }
+    pub fn color(&self) -> Color {
+        self.color
+    }
+
+    fn slot(&self) -> Slot {
+        self.slot.slot()
+    }
+}
 
 impl Background {
     pub fn new(
@@ -103,36 +114,26 @@ impl Background {
         color: Color,
         round_corners: bool,
     ) -> crate::Result<Self> {
-        let background = Self(run(
-            spawner.clone(),
-            BackgroundIimpl::new(compositor, slot, color, round_corners)?,
+        let background = Self::create(BackgroundIimpl::new(
+            compositor,
+            slot,
+            color,
+            round_corners,
         )?);
         background.clone().spawn_event_handlers(spawner)?;
         Ok(background)
     }
     fn spawn_event_handlers(self, spawner: impl Spawn) -> crate::Result<()> {
-        let backgorund = self.clone();
-        let slot = self.0.read(|v| v.slot.slot()).unwrap();
+        let mut backgorund = self.clone();
+        let slot = self.slot();
         let func = unwrap_err(async move {
             let mut stream = slot.on_slot_resized();
             while let Some(size) = stream.next().await {
-                backgorund.set_size(size.as_ref().0).await?;
+                backgorund.async_set_size(size.as_ref().0).await?;
             }
             Ok(())
         });
         spawner.spawn(func)?;
         Ok(())
-    }
-    pub async fn round_corners(&self) -> Option<bool> {
-        self.0.async_read(|v| v.round_corners).await
-    }
-    pub async fn color(&self) -> Option<Color> {
-        self.0.async_read(|v| v.color).await
-    }
-    pub async fn set_color(&self, color: Color) -> crate::Result<Option<()>> {
-        self.0.async_write(|v| v.set_color(color)).await.transpose()
-    }
-    pub async fn set_size(&self, size: Vector2) -> crate::Result<Option<()>> {
-        self.0.async_write(|v| v.set_size(size)).await.transpose()
     }
 }

@@ -1,5 +1,5 @@
 use super::{slot::TranslateWindowEvent, spawn_translate_window_events, Slot, SlotPlug};
-use async_object::{run, Tag};
+use async_object_derive::{async_object_decl, async_object_impl};
 use async_trait::async_trait;
 use futures::task::Spawn;
 use windows::{
@@ -8,6 +8,7 @@ use windows::{
 };
 use winit::event::WindowEvent;
 
+#[async_object_decl(pub LayerStack, pub WLayerStack)]
 struct LayerStackImpl {
     slots: Vec<Slot>,
     compositor: Compositor,
@@ -16,7 +17,7 @@ struct LayerStackImpl {
 }
 
 impl LayerStackImpl {
-    fn new(compositor: &Compositor, slot: &Slot) -> crate::Result<Self> {
+    fn new(compositor: &Compositor, slot: &mut Slot) -> crate::Result<Self> {
         let visual = compositor.CreateContainerVisual()?;
         let slot_plug = slot.plug(visual.clone().into())?;
         Ok(Self {
@@ -26,8 +27,11 @@ impl LayerStackImpl {
             slot_plug,
         })
     }
+}
 
-    fn add_layer(&mut self, pool: impl Spawn) -> crate::Result<Slot> {
+#[async_object_impl(LayerStack, WLayerStack)]
+impl LayerStackImpl {
+    pub fn add_layer(&mut self, pool: impl Spawn) -> crate::Result<Slot> {
         let container = self.compositor.CreateContainerVisual()?;
         container.SetSize(self.visual.Size()?)?;
         self.visual.Children()?.InsertAtTop(container.clone())?;
@@ -44,12 +48,10 @@ impl LayerStackImpl {
         Ok(slot)
     }
 
-    fn remove_layer(&mut self, slot: Slot) -> crate::Result<()> {
+    pub fn remove_layer(&mut self, slot: Slot) -> crate::Result<()> {
         if let Some(index) = self.slots.iter().position(|v| *v == slot) {
             let slot = self.slots.remove(index);
-            self.visual
-                .Children()?
-                .Remove(slot.container_sync().unwrap())?;
+            self.visual.Children()?.Remove(slot.container())?;
         }
         Ok(())
     }
@@ -97,51 +99,24 @@ impl LayerStackImpl {
 //     Ok(())
 // }
 
-#[derive(Clone)]
-pub struct LayerStack(Tag<LayerStackImpl>);
-
 impl LayerStack {
     pub fn new(
         spawner: impl Spawn + Clone,
         compositor: &Compositor,
-        slot: &Slot,
+        slot: &mut Slot,
     ) -> crate::Result<Self> {
-        let layer_stack = Self(run(
-            spawner.clone(),
-            LayerStackImpl::new(compositor, slot)?,
-        )?);
-        spawn_translate_window_events(spawner, slot.clone(), layer_stack.clone())?;
+        let layer_stack = Self::create(LayerStackImpl::new(compositor, slot)?);
+        spawn_translate_window_events(spawner, slot.clone(), layer_stack.downgrade())?;
         Ok(layer_stack)
-    }
-    pub fn add_layer_sync(&mut self, pool: impl Spawn) -> crate::Result<Option<Slot>> {
-        self.0.write(|v| v.add_layer(pool)).transpose()
-    }
-    pub async fn add_layer(&self, pool: impl Spawn) -> crate::Result<Option<Slot>> {
-        self.0.async_write(|v| v.add_layer(pool)).await.transpose()
-    }
-    pub async fn remove_layer(&self, slot: Slot) -> crate::Result<Option<()>> {
-        self.0
-            .async_write(|v| v.remove_layer(slot))
-            .await
-            .transpose()
     }
 }
 
 #[async_trait]
-impl TranslateWindowEvent for LayerStack {
+impl TranslateWindowEvent for WLayerStack {
     async fn translate_window_event(
-        &self,
+        &mut self,
         event: WindowEvent<'static>,
     ) -> crate::Result<Option<()>> {
-        self.0
-            .async_write(|v| v.translate_window_event(event))
-            .await
-            .transpose()
-    }
-    async fn name(&self) -> String {
-        self.0
-            .async_read(|v| v.slot_plug.slot().name())
-            .await
-            .unwrap_or("(dropped)".into())
+        self.async_translate_window_event(event).await
     }
 }

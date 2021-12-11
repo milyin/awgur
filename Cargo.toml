@@ -4,11 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-async_object = { git = "https://github.com/milyin/async-object" }
+async_object = { path = "../async_object" }
+async_object_derive = { path = "../async_object/async_object_derive" }
 futures = "0.3.17"
 thiserror = "1.0"
 float-ord = "0.3.2"
-winit = "0.25.0"
+winit = "0.26.0"
 async-trait = "0.1.51"
 
 [dependencies.windows]

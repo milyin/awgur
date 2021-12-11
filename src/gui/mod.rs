@@ -4,10 +4,10 @@ mod ribbon;
 mod slot;
 // mod text;
 
-pub use background::Background;
-pub use layer_stack::LayerStack;
-pub use ribbon::{CellLimit, Ribbon, RibbonOrientation};
-pub use slot::{spawn_translate_window_events, Slot, SlotPlug, TranslateWindowEvent};
+pub use background::{Background, WBackground};
+pub use layer_stack::{LayerStack, WLayerStack};
+pub use ribbon::{CellLimit, Ribbon, RibbonOrientation, WRibbon};
+pub use slot::{spawn_translate_window_events, Slot, SlotPlug, TranslateWindowEvent, WSlot};
 use windows::Foundation::Numerics::Vector2;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 // pub use text::{Text, TextKeeper, TextTag};

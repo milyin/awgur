@@ -1,4 +1,5 @@
-use async_object::{run, EventStream, Tag};
+use async_object::EventStream;
+use async_object_derive::{async_object_impl, async_object_with_events_decl};
 use async_trait::async_trait;
 use futures::{
     task::{Spawn, SpawnExt},
@@ -14,6 +15,7 @@ use crate::unwrap_err;
 
 use super::{FromVector2, IntoVector2};
 
+#[async_object_with_events_decl(pub Slot, pub WSlot)]
 pub struct SlotImpl {
     container: ContainerVisual,
     name: String,
@@ -23,11 +25,21 @@ impl SlotImpl {
     pub fn new(container: ContainerVisual, name: String) -> Self {
         Self { container, name }
     }
-    pub fn plug(&mut self, visual: &Visual) -> crate::Result<()> {
+}
+
+#[async_object_impl(Slot, WSlot)]
+impl SlotImpl {
+    pub fn plug_internal(&mut self, visual: &Visual) -> crate::Result<()> {
         let size = self.container.Size()?;
         visual.SetSize(size)?;
         self.container.Children()?.InsertAtTop(visual.clone())?;
         Ok(())
+    }
+    pub fn container(&self) -> ContainerVisual {
+        self.container.clone()
+    }
+    pub fn name(&self) -> String {
+        self.name.clone()
     }
 }
 
@@ -44,90 +56,67 @@ impl SlotPlug {
 
 impl Drop for SlotPlug {
     fn drop(&mut self) {
-        if let Some(ref mut slot_container) = self.slot().slot_container() {
-            let _ = slot_container
-                .Children()
-                .map(|c| c.Remove(&self.plugged_visual));
-        }
+        let slot_container = self.slot().container();
+        let _ = slot_container
+            .Children()
+            .map(|c| c.Remove(&self.plugged_visual));
     }
 }
 
-#[derive(Clone, PartialEq)]
-pub struct Slot(Tag<SlotImpl>);
-
 impl Slot {
     pub fn new(pool: impl Spawn, container: ContainerVisual, name: String) -> crate::Result<Self> {
-        let slot = Self(run(pool, SlotImpl::new(container, name))?);
+        let slot = Self::create(SlotImpl::new(container, name), pool)?;
         Ok(slot)
     }
-    pub fn container_sync(&self) -> Option<ContainerVisual> {
-        self.0.read(|v| v.container.clone())
-    }
     pub fn resize_sync(&mut self, size: Vector2) -> crate::Result<()> {
-        println!(
-            "{} {},{}",
-            self.0.read(|v| v.name.clone()).unwrap(),
-            size.X,
-            size.Y
-        );
-        self.container_sync().map(|v| v.SetSize(size)).transpose()?;
-        self.0.send_event(SlotResized(size));
-        self.0.send_event(WindowEvent::Resized(size.from_vector2()));
+        println!("{} {},{}", self.name(), size.X, size.Y);
+        self.container().SetSize(size)?;
+        self.send_event(SlotResized(size));
+        self.send_event(WindowEvent::Resized(size.from_vector2()));
         Ok(())
     }
     pub fn send_window_event_sync(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
         match event {
             WindowEvent::Resized(size) => self.resize_sync(size.into_vector2())?,
             WindowEvent::CursorMoved { position, .. } => {
-                self.0.send_event(SlotCursorMoved(position.into_vector2()));
-                self.0.send_event(event);
+                self.send_event(SlotCursorMoved(position.into_vector2()));
+                self.send_event(event);
             }
             event @ WindowEvent::MouseInput { .. } => {
-                self.0.send_event(SlotMouseInput);
-                self.0.send_event(event);
+                self.send_event(SlotMouseInput);
+                self.send_event(event);
             }
-            event => self.0.send_event(event),
+            event => self.send_event(event),
         }
         Ok(())
     }
     pub async fn wait_for_destroy(&self) -> crate::Result<()> {
-        let mut stream = EventStream::<()>::new(self.0.clone());
+        let mut stream = self.create_event_stream::<()>();
         while let Some(_) = stream.next().await {}
         Ok(())
     }
     pub fn on_window_event(&self) -> EventStream<WindowEvent<'static>> {
-        EventStream::new(self.0.clone())
+        self.create_event_stream()
     }
     pub fn on_slot_resized(&self) -> EventStream<SlotResized> {
-        let subscription = EventStream::new(self.0.clone());
+        let subscription = self.create_event_stream();
         let _ = self.resend_slot_resized();
         subscription
     }
     pub fn on_slot_mouse_input(&self) -> EventStream<SlotMouseInput> {
-        EventStream::new(self.0.clone())
+        self.create_event_stream()
     }
     pub fn on_slot_cursor_moved(&self) -> EventStream<SlotCursorMoved> {
-        EventStream::new(self.0.clone())
-    }
-    pub fn slot_container(&self) -> Option<ContainerVisual> {
-        self.0.read(|v| v.container.clone())
+        self.create_event_stream()
     }
     pub fn resend_slot_resized(&self) -> crate::Result<Option<()>> {
-        if let Some(container) = self.slot_container() {
-            dbg!(container.Size()?);
-            self.0.send_event(SlotResized(container.Size()?));
-            Ok(Some(()))
-        } else {
-            Ok(None)
-        }
+        let container = self.container();
+        dbg!(container.Size()?);
+        self.send_event(SlotResized(container.Size()?));
+        Ok(Some(()))
     }
-    pub fn name(&self) -> String {
-        self.0
-            .read(|v| v.name.clone())
-            .unwrap_or("(dropped)/".into())
-    }
-    pub fn plug(&self, visual: Visual) -> crate::Result<SlotPlug> {
-        self.0.write(|v| v.plug(&visual));
+    pub fn plug(&mut self, visual: Visual) -> crate::Result<SlotPlug> {
+        self.plug_internal(&visual)?;
         Ok(SlotPlug {
             slot: self.clone(),
             plugged_visual: visual,
@@ -147,16 +136,15 @@ pub struct SlotCursorMoved(pub Vector2);
 #[async_trait]
 pub trait TranslateWindowEvent {
     async fn translate_window_event(
-        &self,
+        &mut self,
         event: WindowEvent<'static>,
     ) -> crate::Result<Option<()>>;
-    async fn name(&self) -> String;
 }
 
 pub fn spawn_translate_window_events(
     spawner: impl Spawn,
     source: Slot,
-    destination: impl Send + Sync + 'static + TranslateWindowEvent,
+    mut destination: impl Send + Sync + 'static + TranslateWindowEvent,
 ) -> crate::Result<()> {
     let future = async move {
         while let Some(event) = source.on_window_event().next().await {
