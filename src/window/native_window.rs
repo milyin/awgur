@@ -24,7 +24,7 @@ use winit::{
     event::{DeviceId, ElementState, ModifiersState, MouseButton, WindowEvent},
 };
 
-use crate::{gui::Slot, window::wide_string::ToWide};
+use crate::{gui::Slot, handle_err, window::wide_string::ToWide};
 
 static REGISTER_WINDOW_CLASS: Once = Once::new();
 static WINDOW_CLASS_NAME: &str = "awgur.Window";
@@ -135,32 +135,30 @@ impl Window {
             WM_MOUSEMOVE => {
                 let (x, y) = get_mouse_position(lparam);
                 // self.game.on_pointer_moved(&point).unwrap();
-                self.slot
-                    .send_window_event(WindowEvent::CursorMoved {
-                        device_id: unsafe { DeviceId::dummy() },
-                        position: PhysicalPosition {
-                            x: x as f64,
-                            y: y as f64,
-                        },
-                        modifiers: ModifiersState::default(),
-                    })
-                    .unwrap();
+                handle_err(self.slot.translate_window_event(WindowEvent::CursorMoved {
+                    device_id: unsafe { DeviceId::dummy() },
+                    position: PhysicalPosition {
+                        x: x as f64,
+                        y: y as f64,
+                    },
+                    modifiers: ModifiersState::default(),
+                }))
             }
             WM_SIZE | WM_SIZING => {
                 let size = self.size().unwrap();
-                self.slot
-                    .send_window_event(WindowEvent::Resized((size.Width, size.Height).into()))
-                    .unwrap();
+                handle_err(
+                    self.slot.translate_window_event(WindowEvent::Resized(
+                        (size.Width, size.Height).into(),
+                    )),
+                )
             }
             WM_LBUTTONDOWN => {
-                self.slot
-                    .send_window_event(WindowEvent::MouseInput {
-                        device_id: unsafe { DeviceId::dummy() },
-                        state: ElementState::Pressed,
-                        button: MouseButton::Left,
-                        modifiers: ModifiersState::default(),
-                    })
-                    .unwrap();
+                handle_err(self.slot.translate_window_event(WindowEvent::MouseInput {
+                    device_id: unsafe { DeviceId::dummy() },
+                    state: ElementState::Pressed,
+                    button: MouseButton::Left,
+                    modifiers: ModifiersState::default(),
+                }))
             }
             WM_RBUTTONDOWN => {
                 // self.game.on_pointer_pressed(true, false).unwrap();

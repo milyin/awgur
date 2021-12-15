@@ -1,12 +1,15 @@
-use super::{slot::TranslateWindowEvent, spawn_translate_window_events, Slot, SlotPlug};
-use async_object_derive::{async_object_decl, async_object_impl};
-use async_trait::async_trait;
-use futures::task::Spawn;
-use windows::{
-    Foundation::Numerics::Vector2,
-    UI::Composition::{Compositor, ContainerVisual},
+use super::{
+    slot::{SlotEventData, SlotEventSource},
+    Slot, SlotEvent, SlotPlug,
 };
-use winit::event::WindowEvent;
+use crate::async_handle_err;
+use async_object::Event;
+use async_object_derive::{async_object_decl, async_object_impl};
+use futures::{
+    task::{Spawn, SpawnExt},
+    StreamExt,
+};
+use windows::UI::Composition::{Compositor, ContainerVisual};
 
 #[async_object_decl(pub LayerStack, pub WLayerStack)]
 struct LayerStackImpl {
@@ -26,6 +29,29 @@ impl LayerStackImpl {
             visual,
             slot_plug,
         })
+    }
+}
+
+impl LayerStackImpl {
+    fn translate_event_to_all_layers(&mut self, event: Event<SlotEvent>) -> crate::Result<()> {
+        for slot in &mut self.slots {
+            let data = event.as_ref().data.clone();
+            slot.send_slot_event(SlotEvent::new(
+                SlotEventSource::SlotEvent(event.clone()),
+                data.clone(),
+            ))?;
+        }
+        Ok(())
+    }
+    fn translate_event_to_top_layer(&mut self, event: Event<SlotEvent>) -> crate::Result<()> {
+        if let Some(slot) = self.slots.first_mut() {
+            let data = event.as_ref().data.clone();
+            slot.send_slot_event(SlotEvent::new(
+                SlotEventSource::SlotEvent(event.clone()),
+                data.clone(),
+            ))?;
+        }
+        Ok(())
     }
 }
 
@@ -50,7 +76,6 @@ impl LayerStackImpl {
         self.slots.push(slot.clone());
         Ok(slot)
     }
-
     pub fn remove_layer(&mut self, slot: Slot) -> crate::Result<()> {
         if let Some(index) = self.slots.iter().position(|v| *v == slot) {
             let slot = self.slots.remove(index);
@@ -58,29 +83,13 @@ impl LayerStackImpl {
         }
         Ok(())
     }
-    fn translate_event_to_all_layers(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
-        for slot in &mut self.slots {
-            slot.send_window_event(event.clone())?
-        }
-        Ok(())
-    }
-    fn translate_event_to_top_layer(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
-        if let Some(slot) = self.slots.first_mut() {
-            slot.send_window_event(event)?
-        }
-        Ok(())
-    }
-    fn translate_window_event(&mut self, event: WindowEvent<'static>) -> crate::Result<()> {
-        match event {
-            WindowEvent::Resized(size) => {
-                self.visual.SetSize(Vector2 {
-                    X: size.width as f32,
-                    Y: size.height as f32,
-                })?;
+    fn translate_slot_event(&mut self, event: Event<SlotEvent>) -> crate::Result<()> {
+        match event.as_ref().data {
+            SlotEventData::Resized(size) => {
+                self.visual.SetSize(size)?;
                 self.translate_event_to_all_layers(event)
             }
-            event @ WindowEvent::CursorMoved { .. } => self.translate_event_to_top_layer(event),
-            event @ WindowEvent::MouseInput { .. } => self.translate_event_to_top_layer(event),
+            SlotEventData::MouseInput => self.translate_event_to_top_layer(event),
             _ => self.translate_event_to_all_layers(event),
         }
     }
@@ -109,17 +118,23 @@ impl LayerStack {
         slot: &mut Slot,
     ) -> crate::Result<Self> {
         let layer_stack = Self::create(LayerStackImpl::new(compositor, slot)?);
-        spawn_translate_window_events(spawner, slot.clone(), layer_stack.downgrade())?;
+        let future = {
+            let mut stream = slot.create_slot_event_stream();
+            let mut layer_stack = layer_stack.downgrade();
+            async move {
+                while let Some(event) = stream.next().await {
+                    if layer_stack
+                        .async_translate_slot_event(event)
+                        .await?
+                        .is_none()
+                    {
+                        break;
+                    }
+                }
+                Ok(())
+            }
+        };
+        spawner.spawn(async_handle_err(future))?;
         Ok(layer_stack)
-    }
-}
-
-#[async_trait]
-impl TranslateWindowEvent for WLayerStack {
-    async fn async_translate_window_event(
-        &mut self,
-        event: WindowEvent<'static>,
-    ) -> crate::Result<Option<()>> {
-        self.async_translate_window_event(event).await
     }
 }

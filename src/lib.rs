@@ -39,6 +39,12 @@ impl From<std::io::Error> for Error {
     }
 }
 
-pub fn unwrap_err(future: impl Future<Output = crate::Result<()>>) -> impl Future<Output = ()> {
+pub fn async_handle_err(
+    future: impl Future<Output = crate::Result<()>>,
+) -> impl Future<Output = ()> {
     async { (future.await).unwrap() }
+}
+
+pub fn handle_err(res: crate::Result<()>) {
+    res.unwrap()
 }

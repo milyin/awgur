@@ -1,7 +1,9 @@
 use futures::{executor::ThreadPool, StreamExt};
 use wag::{
-    gui::{Background, CellLimit, LayerStack, Ribbon, RibbonOrientation, WBackground},
-    unwrap_err,
+    async_handle_err,
+    gui::{
+        Background, CellLimit, LayerStack, Ribbon, RibbonOrientation, SlotEventData, WBackground,
+    },
     window::{
         initialize_window_thread,
         native::{run_message_loop, Window},
@@ -38,7 +40,7 @@ fn main() -> wag::Result<()> {
         pool.clone(),
         CellLimit::new(1., 50., Some(300.), Some(Vector2 { X: 0.5, Y: 0.8 })),
     )?;
-    let _button = Background::new(
+    let button = Background::new(
         pool.clone(),
         &compositor,
         button_slot.clone(),
@@ -87,13 +89,16 @@ fn main() -> wag::Result<()> {
         Ok(())
     }
 
-    pool.spawn_ok(unwrap_err({
+    pool.spawn_ok(async_handle_err({
         let mut a = red_surface.downgrade();
         let mut b = green_surface.downgrade();
         let mut c = blue_surface.downgrade();
         async move {
-            while let Some(_) = button_slot.on_slot_mouse_input().next().await {
-                rotate_background_colors(&mut a, &mut b, &mut c).await?;
+            let mut stream = button.slot().upgrade().unwrap().create_slot_event_stream();
+            while let Some(event) = stream.next().await {
+                if let SlotEventData::MouseInput = event.as_ref().data {
+                    rotate_background_colors(&mut a, &mut b, &mut c).await?;
+                }
             }
             Ok(())
         }

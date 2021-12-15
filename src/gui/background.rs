@@ -12,10 +12,12 @@ use windows::{
     },
 };
 
+use crate::async_handle_err;
 use crate::gui::Slot;
 use crate::gui::SlotPlug;
 use crate::gui::WSlot;
-use crate::unwrap_err;
+
+use super::slot::SlotEventData;
 
 #[async_object_decl(pub Background, pub WBackground)]
 pub struct BackgroundIimpl {
@@ -102,7 +104,7 @@ impl BackgroundIimpl {
         self.color
     }
 
-    fn slot(&self) -> WSlot {
+    pub fn slot(&self) -> WSlot {
         self.slot.slot()
     }
 }
@@ -117,25 +119,28 @@ impl Background {
     ) -> crate::Result<Self> {
         let background = Self::create(BackgroundIimpl::new(
             compositor,
-            slot,
+            slot.clone(),
             color,
             round_corners,
         )?);
-        background.clone().spawn_event_handlers(spawner)?;
-        Ok(background)
-    }
-    fn spawn_event_handlers(self, spawner: impl Spawn) -> crate::Result<()> {
-        let mut backgorund = self.clone();
-        let slot = self.slot();
-        let func = unwrap_err(async move {
-            if let Some(mut stream) = slot.upgrade().map(|v| v.on_slot_resized()) {
-                while let Some(size) = stream.next().await {
-                    backgorund.async_set_size(size.as_ref().0).await?;
+        let future = async_handle_err({
+            let mut stream = slot.create_slot_event_stream();
+            let mut background = background.downgrade();
+            async move {
+                while let Some(event) = stream.next().await {
+                    match event.as_ref().data {
+                        SlotEventData::Resized(size) => {
+                            if background.async_set_size(size).await?.is_none() {
+                                break;
+                            }
+                        }
+                        _ => (),
+                    };
                 }
+                Ok(())
             }
-            Ok(())
         });
-        spawner.spawn(func)?;
-        Ok(())
+        spawner.spawn(future)?;
+        Ok(background)
     }
 }
