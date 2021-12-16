@@ -81,16 +81,19 @@ impl Cell {
         let size = self.container.Size()?;
         Ok(is_translated_point_in_box(point, size))
     }
-    fn resize(&mut self, offset: Vector2, size: Vector2) -> crate::Result<()> {
+    fn resize(
+        &mut self,
+        event_source: SlotEventSource,
+        offset: Vector2,
+        size: Vector2,
+    ) -> crate::Result<()> {
         self.container.SetOffset(&Vector3 {
             X: offset.X,
             Y: offset.Y,
             Z: 0.,
         })?;
-        self.slot.send_slot_event(SlotEvent::new(
-            SlotEventSource::None,
-            SlotEventData::Resized(size),
-        ))?;
+        self.slot
+            .send_slot_event(SlotEvent::new(event_source, SlotEventData::Resized(size)))?;
         Ok(())
     }
 }
@@ -123,7 +126,7 @@ impl RibbonImpl {
             mouse_pos: None,
         })
     }
-    fn resize_cells(&mut self, size: Vector2) -> crate::Result<()> {
+    fn resize_cells(&mut self, event_source: SlotEventSource, size: Vector2) -> crate::Result<()> {
         if self.orientation == RibbonOrientation::Stack {
             for cell in &mut self.cells {
                 let content_size = size.clone() * cell.limit.content_ratio.clone();
@@ -131,7 +134,7 @@ impl RibbonImpl {
                     X: (size.X - content_size.X) / 2.,
                     Y: (size.Y - content_size.Y) / 2.,
                 };
-                cell.resize(content_offset, content_size)?;
+                cell.resize(event_source.clone(), content_offset, content_size)?;
             }
         } else {
             let limits = self.cells.iter().map(|c| c.limit).collect::<Vec<_>>();
@@ -157,7 +160,7 @@ impl RibbonImpl {
                 } else {
                     Vector2 { X: 0., Y: pos }
                 };
-                cell.resize(offset, size)?;
+                cell.resize(event_source.clone(), offset, size)?;
                 pos += sizes[i];
             }
         }
@@ -168,22 +171,6 @@ impl RibbonImpl {
             cell.slot.send_slot_event(SlotEvent::new(
                 SlotEventSource::SlotEvent(event.clone()),
                 event.as_ref().data.clone(),
-            ))?;
-        }
-        Ok(())
-    }
-
-    fn translate_slot_event_resized(
-        &mut self,
-        event: Event<SlotEvent>,
-        size: Vector2,
-    ) -> crate::Result<()> {
-        self.resize_cells(size)?;
-        for cell in &mut self.cells {
-            let size = cell.container.Size()?;
-            cell.slot.send_slot_event(SlotEvent::new(
-                SlotEventSource::SlotEvent(event.clone()),
-                SlotEventData::Resized(size),
             ))?;
         }
         Ok(())
@@ -243,12 +230,14 @@ impl RibbonImpl {
             container,
             limit,
         });
-        self.resize_cells(self.container.Size()?)?;
+        self.resize_cells(SlotEventSource::None, self.container.Size()?)?;
         Ok(slot)
     }
     fn translate_slot_event(&mut self, event: Event<SlotEvent>) -> crate::Result<()> {
         match event.as_ref().data {
-            SlotEventData::Resized(size) => self.translate_slot_event_resized(event, size),
+            SlotEventData::Resized(size) => {
+                self.resize_cells(SlotEventSource::SlotEvent(event), size)
+            }
             SlotEventData::MouseInput => self.translate_slot_event_mouse_input(event),
             SlotEventData::CursorMoved(mouse_pos) => {
                 self.translate_slot_event_cursor_moved(event, mouse_pos)

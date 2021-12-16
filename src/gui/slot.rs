@@ -17,6 +17,7 @@ pub enum SlotEventData {
     Empty,
 }
 
+#[derive(Clone)]
 pub enum SlotEventSource {
     WindowEvent(WindowEvent<'static>),
     SlotEvent(Event<SlotEvent>),
