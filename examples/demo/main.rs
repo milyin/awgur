@@ -2,7 +2,8 @@ use futures::{executor::ThreadPool, StreamExt};
 use wag::{
     async_handle_err,
     gui::{
-        Background, CellLimit, LayerStack, Ribbon, RibbonOrientation, SlotEventData, WBackground,
+        Background, CellLimit, LayerStack, Ribbon, RibbonOrientation, Root, SlotEventData,
+        WBackground,
     },
     window::{
         initialize_window_thread,
@@ -19,9 +20,9 @@ fn main() -> wag::Result<()> {
     let pool = ThreadPool::builder() //.pool_size(8)
         .create()?;
     let compositor = Compositor::new()?;
-    let window = Window::new(pool.clone(), &compositor, "demo", 800, 600)?;
-    let mut layer_stack = LayerStack::new(pool.clone(), &compositor, &mut window.slot())?;
-    let layer = layer_stack.add_layer(pool.clone())?;
+    let root = Root::new(&pool, &compositor, Vector2 { X: 800., Y: 600. })?;
+    let mut layer_stack = LayerStack::new(pool.clone(), &compositor, &mut root.slot())?;
+    let layer = layer_stack.add_layer()?;
 
     let mut vribbon = Ribbon::new(
         pool.clone(),
@@ -33,13 +34,15 @@ fn main() -> wag::Result<()> {
     let mut hribbon = Ribbon::new(
         pool.clone(),
         &compositor,
-        vribbon.add_cell(pool.clone(), CellLimit::new(4., 100., None, None))?,
+        vribbon.add_cell(CellLimit::new(4., 100., None, None))?,
         RibbonOrientation::Horizontal,
     )?;
-    let button_slot = vribbon.add_cell(
-        pool.clone(),
-        CellLimit::new(1., 50., Some(300.), Some(Vector2 { X: 0.5, Y: 0.8 })),
-    )?;
+    let button_slot = vribbon.add_cell(CellLimit::new(
+        1.,
+        50.,
+        Some(300.),
+        Some(Vector2 { X: 0.5, Y: 0.8 }),
+    ))?;
     let button = Background::new(
         pool.clone(),
         &compositor,
@@ -47,9 +50,9 @@ fn main() -> wag::Result<()> {
         Colors::Pink()?,
         true,
     )?;
-    let red_slot = hribbon.add_cell(pool.clone(), CellLimit::default())?;
-    let green_slot = hribbon.add_cell(pool.clone(), CellLimit::default())?;
-    let blue_slot = hribbon.add_cell(pool.clone(), CellLimit::default())?;
+    let red_slot = hribbon.add_cell(CellLimit::default())?;
+    let green_slot = hribbon.add_cell(CellLimit::default())?;
+    let blue_slot = hribbon.add_cell(CellLimit::default())?;
     let red_surface = Background::new(
         pool.clone(),
         &compositor,
@@ -104,6 +107,17 @@ fn main() -> wag::Result<()> {
         }
     }));
 
+    // let window = Window::new(
+    //     &compositor,
+    //     "demo",
+    //     800,
+    //     600,
+    //     root.visual(),
+    //     root.tx_event_channel(),
+    // )?;
+
+    let window = Window::new(compositor, "demo", root.visual(), root.tx_event_channel());
+    let _window = window.open()?;
     run_message_loop();
 
     Ok(())

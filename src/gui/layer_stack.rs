@@ -1,7 +1,4 @@
-use super::{
-    slot::{SlotEventData, SlotEventSource},
-    Slot, SlotEvent, SlotPlug,
-};
+use super::{Slot, SlotEvent, SlotEventData, SlotEventSource, SlotPlug};
 use crate::async_handle_err;
 use async_object::Event;
 use async_object_derive::{async_object_decl, async_object_impl};
@@ -32,37 +29,61 @@ impl LayerStackImpl {
     }
 }
 
+#[async_object_impl(LayerStack, WLayerStack)]
 impl LayerStackImpl {
-    fn translate_event_to_all_layers(&mut self, event: Event<SlotEvent>) -> crate::Result<()> {
-        for slot in &mut self.slots {
+    fn slots(&self) -> Vec<Slot> {
+        self.slots.clone()
+    }
+    fn visual(&self) -> ContainerVisual {
+        self.visual.clone()
+    }
+}
+
+impl LayerStack {
+    async fn translate_event_to_all_layers(
+        &mut self,
+        event: Event<SlotEvent>,
+    ) -> crate::Result<()> {
+        for slot in self.slots() {
             let data = event.as_ref().data.clone();
             slot.send_slot_event(SlotEvent::new(
                 SlotEventSource::SlotEvent(event.clone()),
                 data.clone(),
-            ))?;
+            ))
+            .await;
         }
         Ok(())
     }
-    fn translate_event_to_top_layer(&mut self, event: Event<SlotEvent>) -> crate::Result<()> {
-        if let Some(slot) = self.slots.first_mut() {
+    async fn translate_event_to_top_layer(&mut self, event: Event<SlotEvent>) -> crate::Result<()> {
+        if let Some(slot) = self.async_slots().await.first_mut() {
             let data = event.as_ref().data.clone();
             slot.send_slot_event(SlotEvent::new(
                 SlotEventSource::SlotEvent(event.clone()),
                 data.clone(),
-            ))?;
+            ))
+            .await;
         }
         Ok(())
+    }
+    pub async fn translate_slot_event(&mut self, event: Event<SlotEvent>) -> crate::Result<()> {
+        match event.as_ref().data {
+            SlotEventData::Resized(size) => {
+                self.async_visual().await.SetSize(size)?;
+                self.translate_event_to_all_layers(event).await
+            }
+            SlotEventData::MouseInput => self.translate_event_to_top_layer(event).await,
+            _ => self.translate_event_to_all_layers(event).await,
+        }
     }
 }
 
 #[async_object_impl(LayerStack, WLayerStack)]
 impl LayerStackImpl {
-    pub fn add_layer(&mut self, pool: impl Spawn) -> crate::Result<Slot> {
+    pub fn add_layer(&mut self) -> crate::Result<Slot> {
         let container = self.compositor.CreateContainerVisual()?;
         container.SetSize(self.visual.Size()?)?;
         self.visual.Children()?.InsertAtTop(container.clone())?;
         let slot = Slot::new(
-            pool,
             container,
             format!(
                 "{}/LayerStack_{}",
@@ -82,16 +103,6 @@ impl LayerStackImpl {
             self.visual.Children()?.Remove(slot.container())?;
         }
         Ok(())
-    }
-    fn translate_slot_event(&mut self, event: Event<SlotEvent>) -> crate::Result<()> {
-        match event.as_ref().data {
-            SlotEventData::Resized(size) => {
-                self.visual.SetSize(size)?;
-                self.translate_event_to_all_layers(event)
-            }
-            SlotEventData::MouseInput => self.translate_event_to_top_layer(event),
-            _ => self.translate_event_to_all_layers(event),
-        }
     }
 }
 // fn send_mouse_left_pressed(&mut self, event: MouseLeftPressed) -> crate::Result<()> {
@@ -120,14 +131,12 @@ impl LayerStack {
         let layer_stack = Self::create(LayerStackImpl::new(compositor, slot)?);
         let future = {
             let mut stream = slot.create_slot_event_stream();
-            let mut layer_stack = layer_stack.downgrade();
+            let layer_stack = layer_stack.downgrade();
             async move {
                 while let Some(event) = stream.next().await {
-                    if layer_stack
-                        .async_translate_slot_event(event)
-                        .await?
-                        .is_none()
-                    {
+                    if let Some(mut layer_stack) = layer_stack.upgrade() {
+                        layer_stack.translate_slot_event(event).await?
+                    } else {
                         break;
                     }
                 }

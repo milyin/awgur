@@ -1,13 +1,13 @@
 use async_object::{Event, EventStream};
 use async_object_derive::{async_object_impl, async_object_with_events_decl};
-use futures::{task::Spawn, StreamExt};
+use futures::StreamExt;
 use windows::{
     Foundation::Numerics::Vector2,
     UI::Composition::{ContainerVisual, Visual},
 };
 use winit::event::WindowEvent;
 
-use super::{IntoVector2};
+use super::IntoVector2;
 
 #[derive(Clone)]
 pub enum SlotEventData {
@@ -21,7 +21,7 @@ pub enum SlotEventData {
 pub enum SlotEventSource {
     WindowEvent(WindowEvent<'static>),
     SlotEvent(Event<SlotEvent>),
-    None
+    None,
 }
 
 pub struct SlotEvent {
@@ -63,7 +63,7 @@ impl SlotImpl {
 
 #[async_object_impl(Slot, WSlot)]
 impl SlotImpl {
-    pub fn plug_internal(&mut self, visual: &Visual) -> crate::Result<()> {
+    fn plug_internal(&mut self, visual: &Visual) -> crate::Result<()> {
         let size = self.container.Size()?;
         visual.SetSize(size)?;
         self.container.Children()?.InsertAtTop(visual.clone())?;
@@ -99,20 +99,12 @@ impl Drop for SlotPlug {
 }
 
 impl Slot {
-    pub fn new(pool: impl Spawn, container: ContainerVisual, name: String) -> crate::Result<Self> {
-        let slot = Self::create(SlotImpl::new(container, name), pool)?;
+    pub fn new(container: ContainerVisual, name: String) -> crate::Result<Self> {
+        let slot = Self::create(SlotImpl::new(container, name))?;
         Ok(slot)
     }
-    pub fn send_slot_event(&self, event: SlotEvent) -> crate::Result<()> {
-        match &event.data {
-            SlotEventData::Resized(size) => self.container().SetSize(size)?,
-            _ => (),
-        }
-        self.send_event(event);
-        Ok(())
-    }
-    pub fn translate_window_event(&self, event: WindowEvent<'static>) -> crate::Result<()> {
-        self.send_slot_event(SlotEvent::from_window_event(event))
+    pub async fn send_slot_event(&self, event: SlotEvent) {
+        self.send_event(event).await
     }
     pub async fn async_wait_for_destroy(&self) -> crate::Result<()> {
         let mut stream = self.create_event_stream::<()>();

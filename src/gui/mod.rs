@@ -1,13 +1,16 @@
 mod background;
 mod layer_stack;
 mod ribbon;
+mod root;
 mod slot;
 // mod text;
 
 pub use background::{Background, WBackground};
 pub use layer_stack::{LayerStack, WLayerStack};
 pub use ribbon::{CellLimit, Ribbon, RibbonOrientation, WRibbon};
+pub use root::{Root, WRoot};
 pub use slot::{Slot, SlotEvent, SlotEventData, SlotEventSource, SlotPlug, WSlot};
+
 use windows::Foundation::Numerics::Vector2;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 // pub use text::{Text, TextKeeper, TextTag};

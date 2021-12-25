@@ -1,6 +1,6 @@
 use std::sync::Once;
 
-use futures::task::Spawn;
+use futures::channel::mpsc::Sender;
 use windows::{
     core::{self, Handle, Interface},
     Foundation::Numerics::Vector2,
@@ -24,27 +24,38 @@ use winit::{
     event::{DeviceId, ElementState, ModifiersState, MouseButton, WindowEvent},
 };
 
-use crate::{gui::Slot, handle_err, window::wide_string::ToWide};
+use crate::window::wide_string::ToWide;
 
 static REGISTER_WINDOW_CLASS: Once = Once::new();
-static WINDOW_CLASS_NAME: &str = "awgur.Window";
+static WINDOW_CLASS_NAME: &str = "wag.Window";
 
 pub struct Window {
     handle: HWND,
+    title: &'static str,
     target: Option<DesktopWindowTarget>,
     compositor: Compositor,
     root_visual: ContainerVisual,
-    slot: Slot,
+    event_channel: Sender<WindowEvent<'static>>,
 }
 
 impl Window {
     pub fn new(
-        pool: impl Spawn,
-        compositor: &Compositor,
-        title: &str,
-        width: u32,
-        height: u32,
-    ) -> crate::Result<Box<Self>> {
+        compositor: Compositor,
+        title: &'static str,
+        root_visual: ContainerVisual,
+        event_channel: Sender<WindowEvent<'static>>,
+    ) -> Self {
+        Self {
+            handle: HWND(0),
+            title,
+            target: None,
+            compositor,
+            root_visual,
+            event_channel,
+        }
+    }
+
+    pub fn open(self) -> crate::Result<Box<Self>> {
         let class_name = WINDOW_CLASS_NAME.to_wide();
         let instance = unsafe { GetModuleHandleW(PWSTR(std::ptr::null_mut())).ok()? };
         REGISTER_WINDOW_CLASS.call_once(|| {
@@ -58,8 +69,9 @@ impl Window {
             assert_ne!(unsafe { RegisterClassW(&class) }, 0);
         });
 
-        let width = width as i32;
-        let height = height as i32;
+        let size = self.root_visual.Size()?;
+        let width = size.X as i32;
+        let height = size.Y as i32;
         let window_ex_style = WS_EX_NOREDIRECTIONBITMAP;
         let window_style = WS_OVERLAPPEDWINDOW;
 
@@ -75,21 +87,9 @@ impl Window {
             }
             (rect.right - rect.left, rect.bottom - rect.top)
         };
-        let root_visual = compositor.CreateContainerVisual()?;
-        root_visual.SetSize(Vector2 {
-            X: width as f32,
-            Y: height as f32,
-        })?;
-        let slot = Slot::new(pool, root_visual.clone(), "".into())?;
-        let mut result = Box::new(Self {
-            handle: HWND(0),
-            target: None,
-            compositor: compositor.clone(),
-            root_visual,
-            slot,
-        });
 
-        let title = title.to_wide();
+        let title = self.title.to_wide();
+        let mut result = Box::new(self); // TODO: use pin?
         let window = unsafe {
             CreateWindowExW(
                 window_ex_style,
@@ -108,10 +108,10 @@ impl Window {
             .ok()?
         };
 
-        let compositor_desktop: ICompositorDesktopInterop = compositor.cast()?;
+        let compositor_desktop: ICompositorDesktopInterop = result.compositor.cast()?;
         let target =
             unsafe { compositor_desktop.CreateDesktopWindowTarget(result.handle(), true)? };
-        target.SetRoot(result.root_visual())?;
+        target.SetRoot(result.root_visual.clone())?;
         result.target = Some(target);
 
         unsafe { ShowWindow(&window, SW_SHOW) };
@@ -134,31 +134,28 @@ impl Window {
             }
             WM_MOUSEMOVE => {
                 let (x, y) = get_mouse_position(lparam);
-                // self.game.on_pointer_moved(&point).unwrap();
-                handle_err(self.slot.translate_window_event(WindowEvent::CursorMoved {
+                let _ = self.event_channel.try_send(WindowEvent::CursorMoved {
                     device_id: unsafe { DeviceId::dummy() },
                     position: PhysicalPosition {
                         x: x as f64,
                         y: y as f64,
                     },
                     modifiers: ModifiersState::default(),
-                }))
+                });
             }
             WM_SIZE | WM_SIZING => {
                 let size = self.size().unwrap();
-                handle_err(
-                    self.slot.translate_window_event(WindowEvent::Resized(
-                        (size.Width, size.Height).into(),
-                    )),
-                )
+                let _ = self
+                    .event_channel
+                    .try_send(WindowEvent::Resized((size.Width, size.Height).into()));
             }
             WM_LBUTTONDOWN => {
-                handle_err(self.slot.translate_window_event(WindowEvent::MouseInput {
+                let _ = self.event_channel.try_send(WindowEvent::MouseInput {
                     device_id: unsafe { DeviceId::dummy() },
                     state: ElementState::Pressed,
                     button: MouseButton::Left,
                     modifiers: ModifiersState::default(),
-                }))
+                });
             }
             WM_RBUTTONDOWN => {
                 // self.game.on_pointer_pressed(true, false).unwrap();
@@ -197,15 +194,6 @@ impl Window {
     /// Get a reference to the window's compositor.
     pub fn compositor(&self) -> &Compositor {
         &self.compositor
-    }
-
-    /// Get a reference to the window's root visual.
-    pub fn root_visual(&self) -> &ContainerVisual {
-        &self.root_visual
-    }
-
-    pub fn slot(&self) -> Slot {
-        self.slot.clone()
     }
 }
 
