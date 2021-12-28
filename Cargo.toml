@@ -12,7 +12,7 @@ float-ord = "0.3.2"
 winit = "0.26.0"
 
 [dependencies.windows]
-version = "0.28.0"
+version = "0.29.0"
 features = [
     "std",
     "Foundation_Collections",

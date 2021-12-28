@@ -2,17 +2,16 @@ use std::sync::Once;
 
 use futures::channel::mpsc::Sender;
 use windows::{
-    core::{self, Handle, Interface},
-    Foundation::Numerics::Vector2,
+    core::{self, Interface},
     Graphics::SizeInt32,
     Win32::{
-        Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, PWSTR, RECT, WPARAM},
+        Foundation::{HWND, LPARAM, LRESULT, PWSTR, RECT, WPARAM},
         System::{LibraryLoader::GetModuleHandleW, WinRT::Composition::ICompositorDesktopInterop},
         UI::WindowsAndMessaging::{
             AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetClientRect,
             GetMessageW, LoadCursorW, PostQuitMessage, RegisterClassW, ShowWindow,
-            TranslateMessage, CREATESTRUCTW, CW_USEDEFAULT, GWLP_USERDATA, HMENU, IDC_ARROW, MSG,
-            SW_SHOW, WINDOW_LONG_PTR_INDEX, WM_DESTROY, WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_NCCREATE,
+            TranslateMessage, CREATESTRUCTW, CW_USEDEFAULT, GWLP_USERDATA, IDC_ARROW, MSG, SW_SHOW,
+            WINDOW_LONG_PTR_INDEX, WM_DESTROY, WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_NCCREATE,
             WM_RBUTTONDOWN, WM_SIZE, WM_SIZING, WM_TIMER, WNDCLASSW, WS_EX_NOREDIRECTIONBITMAP,
             WS_OVERLAPPEDWINDOW,
         },
@@ -46,7 +45,7 @@ impl Window {
         event_channel: Sender<WindowEvent<'static>>,
     ) -> Self {
         Self {
-            handle: HWND(0),
+            handle: 0,
             title,
             target: None,
             compositor,
@@ -57,10 +56,10 @@ impl Window {
 
     pub fn open(self) -> crate::Result<Box<Self>> {
         let class_name = WINDOW_CLASS_NAME.to_wide();
-        let instance = unsafe { GetModuleHandleW(PWSTR(std::ptr::null_mut())).ok()? };
+        let instance = unsafe { GetModuleHandleW(PWSTR(std::ptr::null_mut())) };
         REGISTER_WINDOW_CLASS.call_once(|| {
             let class = WNDCLASSW {
-                hCursor: unsafe { LoadCursorW(HINSTANCE(0), IDC_ARROW).ok().unwrap() },
+                hCursor: unsafe { LoadCursorW(0, IDC_ARROW) },
                 hInstance: instance,
                 lpszClassName: class_name.as_pwstr(),
                 lpfnWndProc: Some(Self::wnd_proc),
@@ -100,12 +99,11 @@ impl Window {
                 CW_USEDEFAULT,
                 adjusted_width,
                 adjusted_height,
-                HWND(0),
-                HMENU(0),
+                0,
+                0,
                 instance,
                 result.as_mut() as *mut _ as _,
             )
-            .ok()?
         };
 
         let compositor_desktop: ICompositorDesktopInterop = result.compositor.cast()?;
@@ -130,7 +128,7 @@ impl Window {
         match message {
             WM_DESTROY => {
                 unsafe { PostQuitMessage(0) };
-                return LRESULT(0);
+                return 0;
             }
             WM_MOUSEMOVE => {
                 let (x, y) = get_mouse_position(lparam);
@@ -176,7 +174,7 @@ impl Window {
         lparam: LPARAM,
     ) -> LRESULT {
         if message == WM_NCCREATE {
-            let cs = lparam.0 as *const CREATESTRUCTW;
+            let cs = lparam as *const CREATESTRUCTW;
             let this = (*cs).lpCreateParams as *mut Self;
             (*this).handle = window;
 
@@ -202,7 +200,7 @@ pub fn run_message_loop() {
     unsafe {
         // const IDT_TIMER1: usize = 1;
         // SetTimer(window.handle(), IDT_TIMER1, 10, None);
-        while GetMessageW(&mut message, HWND(0), 0, 0).into() {
+        while GetMessageW(&mut message, 0, 0, 0).into() {
             TranslateMessage(&mut message);
             DispatchMessageW(&mut message);
         }
@@ -223,8 +221,8 @@ fn get_window_size(window_handle: HWND) -> core::Result<SizeInt32> {
 }
 
 fn get_mouse_position(lparam: LPARAM) -> (isize, isize) {
-    let x = lparam.0 & 0xffff;
-    let y = (lparam.0 >> 16) & 0xffff;
+    let x = lparam & 0xffff;
+    let y = (lparam >> 16) & 0xffff;
     (x, y)
 }
 

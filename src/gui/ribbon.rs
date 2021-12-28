@@ -23,7 +23,7 @@ pub enum RibbonOrientation {
     Vertical,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone)]
 pub struct CellLimit {
     pub ratio: f32,
     pub min_size: f32,
