@@ -10,6 +10,7 @@ futures = "0.3.17"
 thiserror = "1.0"
 float-ord = "0.3.2"
 winit = "0.26.0"
+# bindings = { path = "bindings" }
 
 [dependencies.windows]
 version = "0.29.0"
@@ -19,6 +20,8 @@ features = [
     "Foundation_Numerics",
     "Graphics",
     "System",
+    "Foundation",
+    "UI_Composition",
     "UI_Composition_Desktop",
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
@@ -26,4 +29,5 @@ features = [
     "Win32_System_WinRT",
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_WinRT_Composition",
+    "Graphics_DirectX",
 ]

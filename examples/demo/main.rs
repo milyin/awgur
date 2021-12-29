@@ -20,6 +20,11 @@ fn main() -> wag::Result<()> {
     let pool = ThreadPool::builder() //.pool_size(8)
         .create()?;
     let compositor = Compositor::new()?;
+
+    let canvas_device = CanvasDevice::GetSharedDevice()?;
+    let composition_graphics_device =
+        CanvasComposition::CreateCompositionGraphicsDevice(&compositor, &canvas_device)?;
+
     let root = Root::new(&pool, &compositor, Vector2 { X: 800., Y: 600. })?;
     let mut layer_stack = LayerStack::new(pool.clone(), &compositor, &mut root.slot())?;
     let layer = layer_stack.add_layer()?;
