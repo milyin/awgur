@@ -5,7 +5,7 @@ mod root;
 mod slot;
 // mod text;
 
-pub use background::{Background, WBackground};
+pub use background::{Background, BackgroundBuilder, WBackground};
 pub use layer_stack::{LayerStack, WLayerStack};
 pub use ribbon::{CellLimit, Ribbon, RibbonOrientation, WRibbon};
 pub use root::{Root, WRoot};

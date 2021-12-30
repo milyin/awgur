@@ -4,6 +4,7 @@ use futures::{
     task::{Spawn, SpawnExt},
     StreamExt,
 };
+use typed_builder::TypedBuilder;
 use windows::{
     Foundation::Numerics::Vector2,
     UI::{
@@ -142,5 +143,22 @@ impl Background {
         });
         spawner.spawn(future)?;
         Ok(background)
+    }
+}
+
+#[derive(TypedBuilder)]
+pub struct BackgroundBuilder {
+    round_corners: bool,
+    color: Color,
+}
+
+impl BackgroundBuilder {
+    pub fn new(
+        self,
+        spawner: impl Spawn + Clone,
+        compositor: &Compositor,
+        slot: Slot,
+    ) -> crate::Result<Background> {
+        Background::new(spawner, compositor, slot, self.color, self.round_corners)
     }
 }

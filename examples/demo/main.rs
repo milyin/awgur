@@ -2,8 +2,8 @@ use futures::{executor::ThreadPool, StreamExt};
 use wag::{
     async_handle_err,
     gui::{
-        Background, CellLimit, LayerStack, Ribbon, RibbonOrientation, Root, SlotEventData,
-        WBackground,
+        Background, BackgroundBuilder, CellLimit, LayerStack, Ribbon, RibbonOrientation, Root,
+        SlotEventData, WBackground,
     },
     window::{
         initialize_window_thread,
@@ -21,9 +21,9 @@ fn main() -> wag::Result<()> {
         .create()?;
     let compositor = Compositor::new()?;
 
-    let canvas_device = CanvasDevice::GetSharedDevice()?;
-    let composition_graphics_device =
-        CanvasComposition::CreateCompositionGraphicsDevice(&compositor, &canvas_device)?;
+    // let canvas_device = CanvasDevice::GetSharedDevice()?;
+    // let composition_graphics_device =
+    //     CanvasComposition::CreateCompositionGraphicsDevice(&compositor, &canvas_device)?;
 
     let root = Root::new(&pool, &compositor, Vector2 { X: 800., Y: 600. })?;
     let mut layer_stack = LayerStack::new(pool.clone(), &compositor, &mut root.slot())?;
@@ -48,13 +48,18 @@ fn main() -> wag::Result<()> {
         Some(300.),
         Some(Vector2 { X: 0.5, Y: 0.8 }),
     ))?;
-    let button = Background::new(
-        pool.clone(),
-        &compositor,
-        button_slot.clone(),
-        Colors::Pink()?,
-        true,
-    )?;
+    // let button = Background::new(
+    //     pool.clone(),
+    //     &compositor,
+    //     button_slot.clone(),
+    //     Colors::Pink()?,
+    //     true,
+    // )?;
+    let button = BackgroundBuilder::builder()
+        .color(Colors::Pink()?)
+        .round_corners(true)
+        .build()
+        .new(pool.clone(), &compositor, button_slot.clone())?;
     let red_slot = hribbon.add_cell(CellLimit::default())?;
     let green_slot = hribbon.add_cell(CellLimit::default())?;
     let blue_slot = hribbon.add_cell(CellLimit::default())?;
