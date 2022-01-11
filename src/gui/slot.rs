@@ -44,6 +44,7 @@ impl SlotEvent {
             data,
         }
     }
+
     pub fn new(source: SlotEventSource, data: SlotEventData) -> Self {
         Self { source, data }
     }

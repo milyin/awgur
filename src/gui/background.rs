@@ -32,7 +32,7 @@ pub struct BackgroundIimpl {
 impl BackgroundIimpl {
     fn new(
         compositor: &Compositor,
-        mut slot: Slot,
+        slot: &mut Slot,
         color: Color,
         round_corners: bool,
     ) -> crate::Result<Self> {
@@ -114,13 +114,13 @@ impl Background {
     pub fn new(
         spawner: impl Spawn + Clone,
         compositor: &Compositor,
-        slot: Slot,
+        slot: &mut Slot,
         color: Color,
         round_corners: bool,
     ) -> crate::Result<Self> {
         let background = Self::create(BackgroundIimpl::new(
             compositor,
-            slot.clone(),
+            slot,
             color,
             round_corners,
         )?);
@@ -157,7 +157,7 @@ impl BackgroundBuilder {
         self,
         spawner: impl Spawn + Clone,
         compositor: &Compositor,
-        slot: Slot,
+        slot: &mut Slot,
     ) -> crate::Result<Background> {
         Background::new(spawner, compositor, slot, self.color, self.round_corners)
     }

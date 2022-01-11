@@ -42,7 +42,7 @@ fn main() -> wag::Result<()> {
         vribbon.add_cell(CellLimit::new(4., 100., None, None))?,
         RibbonOrientation::Horizontal,
     )?;
-    let button_slot = vribbon.add_cell(CellLimit::new(
+    let mut button_slot = vribbon.add_cell(CellLimit::new(
         1.,
         50.,
         Some(300.),
@@ -59,21 +59,21 @@ fn main() -> wag::Result<()> {
         .color(Colors::Pink()?)
         .round_corners(true)
         .build()
-        .new(pool.clone(), &compositor, button_slot.clone())?;
-    let red_slot = hribbon.add_cell(CellLimit::default())?;
-    let green_slot = hribbon.add_cell(CellLimit::default())?;
-    let blue_slot = hribbon.add_cell(CellLimit::default())?;
+        .new(pool.clone(), &compositor, &mut button_slot)?;
+    let mut red_slot = hribbon.add_cell(CellLimit::default())?;
+    let mut green_slot = hribbon.add_cell(CellLimit::default())?;
+    let mut blue_slot = hribbon.add_cell(CellLimit::default())?;
     let red_surface = Background::new(
         pool.clone(),
         &compositor,
-        red_slot.clone(),
+        &mut red_slot,
         Colors::Red()?,
         true,
     )?;
     let green_surface = Background::new(
         pool.clone(),
         &compositor,
-        green_slot.clone(),
+        &mut green_slot,
         Colors::Green()?,
         true,
     )?;
@@ -81,7 +81,7 @@ fn main() -> wag::Result<()> {
     let blue_surface = Background::new(
         pool.clone(),
         &compositor,
-        blue_slot.clone(),
+        &mut blue_slot,
         Colors::Blue()?,
         true,
     )?;
