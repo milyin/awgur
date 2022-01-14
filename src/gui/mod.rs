@@ -7,7 +7,7 @@ mod slot;
 // mod text;
 
 pub use background::{Background, BackgroundBuilder, WBackground};
-pub use button::{Button, WButton};
+pub use button::{Button, ButtonEvent, WButton};
 pub use layer_stack::{LayerStack, WLayerStack};
 pub use ribbon::{CellLimit, Ribbon, RibbonOrientation, WRibbon};
 pub use root::{Root, WRoot};

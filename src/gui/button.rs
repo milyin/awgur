@@ -1,16 +1,19 @@
-use async_object::Event;
-use async_object_derive::{async_object_decl, async_object_impl};
+use super::{Slot, SlotEvent, SlotEventData, SlotEventSource, SlotPlug};
+use crate::async_handle_err;
+use async_object::{Event, EventStream};
+use async_object_derive::{async_object_impl, async_object_with_events_decl};
 use futures::{
     task::{Spawn, SpawnExt},
     StreamExt,
 };
 use windows::UI::Composition::{Compositor, ContainerVisual};
 
-use crate::async_handle_err;
+#[derive(PartialEq)]
+pub enum ButtonEvent {
+    Pressed,
+}
 
-use super::{Slot, SlotEvent, SlotEventData, SlotEventSource, SlotPlug};
-
-#[async_object_decl(pub Button, pub WButton)]
+#[async_object_with_events_decl(pub Button, pub WButton)]
 struct ButtonImpl {
     slot: Slot,
     _slot_plug: SlotPlug,
@@ -43,7 +46,7 @@ impl Button {
         compositor: &Compositor,
         slot: &mut Slot,
     ) -> crate::Result<Self> {
-        let button = Self::create(ButtonImpl::new(compositor, slot)?);
+        let button = Self::create(ButtonImpl::new(compositor, slot)?)?;
         let future = {
             let mut stream = slot.create_slot_event_stream();
             let wbutton = button.downgrade();
@@ -62,9 +65,16 @@ impl Button {
         Ok(button)
     }
 
-    pub async fn translate_slot_event(&mut self, event: Event<SlotEvent>) -> crate::Result<()> {
+    pub fn create_button_event_stream(&self) -> EventStream<ButtonEvent> {
+        self.create_event_stream()
+    }
+
+    async fn translate_slot_event(&mut self, event: Event<SlotEvent>) -> crate::Result<()> {
         let data = match &event.as_ref().data {
-            SlotEventData::MouseInput => None, // TODO: process press button here
+            SlotEventData::MouseInput => {
+                self.send_event(ButtonEvent::Pressed).await;
+                None
+            }
             data => Some(data.clone()),
         };
         if let Some(data) = data {

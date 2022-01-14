@@ -2,8 +2,8 @@ use futures::{executor::ThreadPool, StreamExt};
 use wag::{
     async_handle_err,
     gui::{
-        Background, BackgroundBuilder, CellLimit, LayerStack, Ribbon, RibbonOrientation, Root,
-        SlotEventData, WBackground,
+        Background, BackgroundBuilder, Button, ButtonEvent, CellLimit, LayerStack, Ribbon,
+        RibbonOrientation, Root, SlotEventData, WBackground,
     },
     window::{
         initialize_window_thread,
@@ -55,11 +55,13 @@ fn main() -> wag::Result<()> {
     //     Colors::Pink()?,
     //     true,
     // )?;
-    let button = BackgroundBuilder::builder()
+    let button = Button::new(pool.clone(), &compositor, &mut button_slot)?;
+    let button_image = BackgroundBuilder::builder()
         .color(Colors::Pink()?)
         .round_corners(true)
         .build()
-        .new(pool.clone(), &compositor, &mut button_slot)?;
+        .new(pool.clone(), &compositor, &mut button.slot())?;
+
     let mut red_slot = hribbon.add_cell(CellLimit::default())?;
     let mut green_slot = hribbon.add_cell(CellLimit::default())?;
     let mut blue_slot = hribbon.add_cell(CellLimit::default())?;
@@ -107,9 +109,9 @@ fn main() -> wag::Result<()> {
         let mut b = green_surface.downgrade();
         let mut c = blue_surface.downgrade();
         async move {
-            let mut stream = button.slot().upgrade().unwrap().create_slot_event_stream();
+            let mut stream = button.create_button_event_stream();
             while let Some(event) = stream.next().await {
-                if let SlotEventData::MouseInput = event.as_ref().data {
+                if ButtonEvent::Pressed == *event.as_ref() {
                     rotate_background_colors(&mut a, &mut b, &mut c).await?;
                 }
             }
