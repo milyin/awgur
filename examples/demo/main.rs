@@ -2,8 +2,8 @@ use futures::{executor::ThreadPool, StreamExt};
 use wag::{
     async_handle_err,
     gui::{
-        Background, BackgroundBuilder, Button, ButtonEvent, CellLimit, LayerStack, Ribbon,
-        RibbonOrientation, Root, SlotEventData, WBackground,
+        Background, BackgroundBuilder, Button, ButtonDefaultDesign, ButtonEvent, ButtonEventData,
+        CellLimit, LayerStack, Ribbon, RibbonOrientation, Root, SlotEventData, WBackground,
     },
     window::{
         initialize_window_thread,
@@ -56,11 +56,12 @@ fn main() -> wag::Result<()> {
     //     true,
     // )?;
     let button = Button::new(pool.clone(), &compositor, &mut button_slot)?;
-    let button_image = BackgroundBuilder::builder()
-        .color(Colors::Pink()?)
-        .round_corners(true)
-        .build()
-        .new(pool.clone(), &compositor, &mut button.slot())?;
+    let button_design = ButtonDefaultDesign::new(
+        pool.clone(),
+        &compositor,
+        &mut button.slot(),
+        button.create_button_event_stream(),
+    )?;
 
     let mut red_slot = hribbon.add_cell(CellLimit::default())?;
     let mut green_slot = hribbon.add_cell(CellLimit::default())?;
@@ -111,7 +112,7 @@ fn main() -> wag::Result<()> {
         async move {
             let mut stream = button.create_button_event_stream();
             while let Some(event) = stream.next().await {
-                if ButtonEvent::Pressed == *event.as_ref() {
+                if ButtonEventData::Release(true) == event.as_ref().data {
                     rotate_background_colors(&mut a, &mut b, &mut c).await?;
                 }
             }

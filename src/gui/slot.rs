@@ -5,7 +5,7 @@ use windows::{
     Foundation::Numerics::Vector2,
     UI::Composition::{ContainerVisual, Visual},
 };
-use winit::event::WindowEvent;
+use winit::event::{ElementState, MouseButton, WindowEvent};
 
 use super::IntoVector2;
 
@@ -13,7 +13,11 @@ use super::IntoVector2;
 pub enum SlotEventData {
     Resized(Vector2),
     CursorMoved(Vector2),
-    MouseInput,
+    MouseInput {
+        in_slot: bool,
+        state: ElementState,
+        button: MouseButton,
+    },
     Empty,
 }
 
@@ -36,7 +40,11 @@ impl SlotEvent {
             WindowEvent::CursorMoved { position, .. } => {
                 SlotEventData::CursorMoved(position.into_vector2())
             }
-            WindowEvent::MouseInput { .. } => SlotEventData::MouseInput,
+            WindowEvent::MouseInput { state, button, .. } => SlotEventData::MouseInput {
+                in_slot: true,
+                state: *state,
+                button: *button,
+            },
             _ => SlotEventData::Empty,
         };
         Self {

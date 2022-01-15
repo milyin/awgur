@@ -15,6 +15,7 @@ use windows::{
     Foundation::Numerics::{Vector2, Vector3},
     UI::Composition::{Compositor, ContainerVisual},
 };
+use winit::event::{ElementState, MouseButton};
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum RibbonOrientation {
@@ -208,30 +209,6 @@ impl RibbonImpl {
     }
 }
 
-// fn send_mouse_left_pressed(&mut self, event: MouseLeftPressed) -> crate::Result<()> {
-//     for cell in &mut self.cells {
-//         let point = cell.translate_point(event.0)?;
-//         cell.slot_keeper
-//             .send_mouse_left_pressed(MouseLeftPressed(point))?
-//     }
-//     Ok(())
-// }
-
-// fn send_mouse_left_pressed_focused(
-//     &mut self,
-//     event: MouseLeftPressedFocused,
-// ) -> crate::Result<()> {
-//     for cell in &mut self.cells {
-//         let point = cell.translate_point(event.0)?;
-//         if cell.is_translated_point_in_cell(point)? {
-//             return cell
-//                 .slot_keeper
-//                 .send_mouse_left_pressed_focused(MouseLeftPressedFocused(point));
-//         }
-//     }
-//     Ok(())
-// }
-
 impl Ribbon {
     pub fn new(
         spawner: impl Spawn + Clone,
@@ -261,7 +238,10 @@ impl Ribbon {
     async fn translate_slot_event(&mut self, event: Event<SlotEvent>) -> crate::Result<()> {
         match event.as_ref().data {
             SlotEventData::Resized(size) => self.translate_slot_event_resized(event, size).await,
-            SlotEventData::MouseInput => self.translate_slot_event_mouse_input(event).await,
+            SlotEventData::MouseInput { state, button, .. } => {
+                self.translate_slot_event_mouse_input(event, state, button)
+                    .await
+            }
             SlotEventData::CursorMoved(mouse_pos) => {
                 self.translate_slot_event_cursor_moved(event, mouse_pos)
                     .await
@@ -320,18 +300,23 @@ impl Ribbon {
     async fn translate_slot_event_mouse_input(
         &mut self,
         event: Event<SlotEvent>,
+        state: ElementState,
+        button: MouseButton,
     ) -> crate::Result<()> {
         if let Some(mouse_pos) = self.async_get_mouse_pos().await {
             for cell in self.async_cells().await {
                 let mouse_pos = cell.translate_point(mouse_pos)?;
-                if cell.is_translated_point_in_cell(mouse_pos)? {
-                    cell.slot
-                        .send_slot_event(SlotEvent::new(
-                            SlotEventSource::SlotEvent(event.clone()),
-                            SlotEventData::MouseInput,
-                        ))
-                        .await;
-                }
+                let in_slot = cell.is_translated_point_in_cell(mouse_pos)?;
+                cell.slot
+                    .send_slot_event(SlotEvent::new(
+                        SlotEventSource::SlotEvent(event.clone()),
+                        SlotEventData::MouseInput {
+                            in_slot,
+                            state,
+                            button,
+                        },
+                    ))
+                    .await;
             }
         }
         Ok(())

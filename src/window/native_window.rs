@@ -11,9 +11,9 @@ use windows::{
             AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetClientRect,
             GetMessageW, LoadCursorW, PostQuitMessage, RegisterClassW, ShowWindow,
             TranslateMessage, CREATESTRUCTW, CW_USEDEFAULT, GWLP_USERDATA, IDC_ARROW, MSG, SW_SHOW,
-            WINDOW_LONG_PTR_INDEX, WM_DESTROY, WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_NCCREATE,
-            WM_RBUTTONDOWN, WM_SIZE, WM_SIZING, WM_TIMER, WNDCLASSW, WS_EX_NOREDIRECTIONBITMAP,
-            WS_OVERLAPPEDWINDOW,
+            WINDOW_LONG_PTR_INDEX, WM_DESTROY, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+            WM_NCCREATE, WM_RBUTTONDOWN, WM_SIZE, WM_SIZING, WM_TIMER, WNDCLASSW,
+            WS_EX_NOREDIRECTIONBITMAP, WS_OVERLAPPEDWINDOW,
         },
     },
     UI::Composition::{Compositor, ContainerVisual, Desktop::DesktopWindowTarget},
@@ -151,6 +151,14 @@ impl Window {
                 let _ = self.event_channel.try_send(WindowEvent::MouseInput {
                     device_id: unsafe { DeviceId::dummy() },
                     state: ElementState::Pressed,
+                    button: MouseButton::Left,
+                    modifiers: ModifiersState::default(),
+                });
+            }
+            WM_LBUTTONUP => {
+                let _ = self.event_channel.try_send(WindowEvent::MouseInput {
+                    device_id: unsafe { DeviceId::dummy() },
+                    state: ElementState::Released,
                     button: MouseButton::Left,
                     modifiers: ModifiersState::default(),
                 });

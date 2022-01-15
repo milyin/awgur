@@ -71,7 +71,7 @@ impl LayerStack {
                 self.async_visual().await.SetSize(size)?;
                 self.translate_event_to_all_layers(event).await
             }
-            SlotEventData::MouseInput => self.translate_event_to_top_layer(event).await,
+            SlotEventData::MouseInput { .. } => self.translate_event_to_top_layer(event).await,
             _ => self.translate_event_to_all_layers(event).await,
         }
     }
