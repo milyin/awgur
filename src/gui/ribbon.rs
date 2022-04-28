@@ -1,5 +1,6 @@
 use super::{is_translated_point_in_box, panel::PanelEventData, IntoVector2, Panel, PanelEvent};
-use async_object_derive::{async_object_decl, async_object_impl};
+use async_object::EventStream;
+use async_object_derive::{async_object_impl, async_object_with_events_decl};
 use async_trait::async_trait;
 use windows::{
     Foundation::Numerics::{Vector2, Vector3},
@@ -103,7 +104,7 @@ impl PartialEq for Cell {
     }
 }
 
-#[async_object_decl(pub Ribbon, pub WRibbon)]
+#[async_object_with_events_decl(pub Ribbon, pub WRibbon)]
 pub struct RibbonImpl {
     compositor: Compositor,
     container: ContainerVisual,
@@ -203,17 +204,25 @@ impl Panel for Ribbon {
     }
     async fn on_panel_event(&mut self, event: PanelEvent) -> crate::Result<()> {
         match event.data {
-            PanelEventData::Resized(size) => self.translate_panel_event_resized(event, size).await,
+            PanelEventData::Resized(size) => {
+                self.translate_panel_event_resized(event.clone(), size)
+                    .await
+            }
             PanelEventData::MouseInput { state, button, .. } => {
-                self.translate_slot_event_mouse_input(event, state, button)
+                self.translate_slot_event_mouse_input(event.clone(), state, button)
                     .await
             }
             PanelEventData::CursorMoved(mouse_pos) => {
-                self.translate_slot_event_cursor_moved(event, mouse_pos)
+                self.translate_slot_event_cursor_moved(event.clone(), mouse_pos)
                     .await
             }
-            _ => self.translate_panel_event_default(event).await,
-        }
+            _ => self.translate_panel_event_default(event.clone()).await,
+        }?;
+        self.send_event(event).await;
+        Ok(())
+    }
+    fn panel_event_stream(&self) -> EventStream<PanelEvent> {
+        self.create_event_stream()
     }
     fn clone_box(&self) -> Box<dyn Panel> {
         Box::new(self.clone())

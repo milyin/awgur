@@ -1,4 +1,5 @@
 use super::{Panel, PanelEvent, PanelEventData};
+use async_object::EventStream;
 use async_object_derive::{async_object_impl, async_object_with_events_decl};
 use async_trait::async_trait;
 
@@ -102,7 +103,12 @@ impl Panel for LayerStack {
         self.visual().into()
     }
     async fn on_panel_event(&mut self, event: PanelEvent) -> crate::Result<()> {
-        self.translate_event(event).await
+        self.translate_event(event.clone()).await?;
+        self.send_event(event).await;
+        Ok(())
+    }
+    fn panel_event_stream(&self) -> EventStream<PanelEvent> {
+        self.create_event_stream()
     }
     fn clone_box(&self) -> Box<(dyn Panel + 'static)> {
         Box::new(self.clone())

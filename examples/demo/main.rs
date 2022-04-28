@@ -2,8 +2,8 @@ use futures::{executor::ThreadPool, StreamExt};
 use wag::{
     async_handle_err,
     gui::{
-        Background, BackgroundBuilder, Button, ButtonEvent, ButtonEventData, ButtonSkin, CellLimit,
-        LayerStack, Ribbon, RibbonOrientation, Root, PanelEventData, WBackground,
+        Background, CellLimit, LayerStack, Panel, PanelEventData, Ribbon, RibbonOrientation, Root,
+        WBackground,
     },
     window::{
         initialize_window_thread,
@@ -25,24 +25,15 @@ fn main() -> wag::Result<()> {
     // let composition_graphics_device =
     //     CanvasComposition::CreateCompositionGraphicsDevice(&compositor, &canvas_device)?;
 
-    let root = Root::new(&pool, &compositor, Vector2 { X: 800., Y: 600. })?;
-    let mut layer_stack = LayerStack::new(pool.clone(), compositor.clone())?;
-    let mut vribbon = Ribbon::new(pool.clone(), compositor, RibbonOrientation::Vertical)?;
-    layer_stack.add_layer(vribbon.clone());
-    let mut hribbon = Ribbon::new(
-        pool.clone(),
-        compositor.clone(),
-        RibbonOrientation::Horizontal,
-    )?;
-    vribbon.add_cell(hribbon.clone(), CellLimit::new(4., 100., None, None))?,
-    
-   let button = Background::new(
-        pool.clone(),
-        &compositor,
-        button_slot.clone(),
-        Colors::Pink()?,
-        true,
-    )?;
+    let mut root = Root::new(&pool, &compositor, Vector2 { X: 800., Y: 600. })?;
+    let mut layer_stack = LayerStack::new(compositor.clone())?;
+    root.set_panel(layer_stack.clone())?;
+    let mut vribbon = Ribbon::new(compositor.clone(), RibbonOrientation::Vertical)?;
+    layer_stack.add_layer(vribbon.clone())?;
+    let mut hribbon = Ribbon::new(compositor.clone(), RibbonOrientation::Horizontal)?;
+    vribbon.add_cell(hribbon.clone(), CellLimit::new(4., 100., None, None))?;
+
+    let button = Background::new(compositor.clone(), Colors::Pink()?, true)?;
     // let button = Button::new(pool.clone(), &compositor, &mut button_slot)?;
     // let button_skin = ButtonSkin::new(
     //     pool.clone(),
@@ -52,35 +43,16 @@ fn main() -> wag::Result<()> {
     // )?;
     vribbon.add_cell(
         button.clone(),
-        CellLimit::new(
-        1.,
-        50.,
-        Some(300.),
-        Some(Vector2 { X: 0.5, Y: 0.8 }),
-    ))?;
- 
-    let red_surface = Background::new(
-        pool.clone(),
-        &compositor,
-        Colors::Red()?,
-        true,
-    )?;
-    let green_surface = Background::new(
-        pool.clone(),
-        &compositor,
-        Colors::Green()?,
-        true,
-    )?;
-    let blue_surface = Background::new(
-        pool.clone(),
-        &compositor,
-        Colors::Blue()?,
-        true,
+        CellLimit::new(1., 50., Some(300.), Some(Vector2 { X: 0.5, Y: 0.8 })),
     )?;
 
-     hribbon.add_cell(red_surface, CellLimit::default())?;
-     hribbon.add_cell(green_surface, CellLimit::default())?;
-     hribbon.add_cell(blue_surface, CellLimit::default())?;
+    let red_surface = Background::new(compositor.clone(), Colors::Red()?, true)?;
+    let green_surface = Background::new(compositor.clone(), Colors::Green()?, true)?;
+    let blue_surface = Background::new(compositor.clone(), Colors::Blue()?, true)?;
+
+    hribbon.add_cell(red_surface.clone(), CellLimit::default())?;
+    hribbon.add_cell(green_surface.clone(), CellLimit::default())?;
+    hribbon.add_cell(blue_surface.clone(), CellLimit::default())?;
 
     async fn rotate_background_colors(
         a: &mut WBackground,
@@ -103,11 +75,14 @@ fn main() -> wag::Result<()> {
         let mut b = green_surface.downgrade();
         let mut c = blue_surface.downgrade();
         async move {
-            let mut stream = button.create_button_event_stream();
+            let mut stream = button.panel_event_stream();
             while let Some(event) = stream.next().await {
-                if ButtonEventData::Release(true) == event.as_ref().data {
+                if let PanelEventData::MouseInput { .. } = event.as_ref().data {
                     rotate_background_colors(&mut a, &mut b, &mut c).await?;
                 }
+                // if ButtonEventData::Release(true) == event.as_ref().data {
+                //     rotate_background_colors(&mut a, &mut b, &mut c).await?;
+                // }
             }
             Ok(())
         }

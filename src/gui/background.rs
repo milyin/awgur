@@ -1,4 +1,5 @@
-use async_object_derive::{async_object_decl, async_object_impl};
+use async_object::EventStream;
+use async_object_derive::{async_object_impl, async_object_with_events_decl};
 use async_trait::async_trait;
 use float_ord::FloatOrd;
 use typed_builder::TypedBuilder;
@@ -12,7 +13,7 @@ use windows::{
 
 use super::{Panel, PanelEvent, PanelEventData};
 
-#[async_object_decl(pub Background, pub WBackground)]
+#[async_object_with_events_decl(pub Background, pub WBackground)]
 pub struct BackgroundImpl {
     compositor: Compositor,
     shape: ShapeVisual,
@@ -109,7 +110,11 @@ impl Panel for Background {
         if let PanelEventData::Resized(size) = event.data {
             self.async_resize(size).await?
         }
+        self.send_event(event).await;
         Ok(())
+    }
+    fn panel_event_stream(&self) -> EventStream<PanelEvent> {
+        self.create_event_stream()
     }
     fn clone_box(&self) -> Box<(dyn Panel + 'static)> {
         Box::new(self.clone())

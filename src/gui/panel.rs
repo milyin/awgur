@@ -1,11 +1,7 @@
-
-
+use async_object::EventStream;
 use async_trait::async_trait;
 
-use windows::{
-    Foundation::Numerics::Vector2,
-    UI::Composition::{Visual},
-};
+use windows::{Foundation::Numerics::Vector2, UI::Composition::Visual};
 use winit::event::{ElementState, MouseButton, WindowEvent};
 
 use super::IntoVector2;
@@ -54,6 +50,7 @@ impl PanelEvent {
 pub trait Panel: Send + Sync {
     fn get_visual(&self) -> Visual;
     async fn on_panel_event(&mut self, event: PanelEvent) -> crate::Result<()>;
+    fn panel_event_stream(&self) -> EventStream<PanelEvent>;
     fn clone_box(&self) -> Box<dyn Panel>;
 }
 

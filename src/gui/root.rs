@@ -16,7 +16,7 @@ use super::{Panel, PanelEvent, PanelEventData};
 
 #[async_object_with_events_decl(pub Root, pub WRoot)]
 struct RootImpl {
-    item: Option<Box<dyn Panel>>,
+    panel: Option<Box<dyn Panel>>,
     root_visual: ContainerVisual,
     tx_event_channel: Sender<WindowEvent<'static>>,
 }
@@ -30,7 +30,7 @@ impl RootImpl {
         let root_visual = compositor.CreateContainerVisual()?;
         root_visual.SetSize(size)?;
         Ok(RootImpl {
-            item: None,
+            panel: None,
             root_visual,
             tx_event_channel,
         })
@@ -42,18 +42,21 @@ impl RootImpl {
     pub fn tx_event_channel(&self) -> Sender<WindowEvent<'static>> {
         self.tx_event_channel.clone()
     }
-    pub fn set_item(&mut self, item: impl Panel + 'static) -> crate::Result<()> {
-        if let Some(item) = self.item.take() {
+    pub fn visual(&self) -> ContainerVisual {
+        self.root_visual.clone()
+    }
+    pub fn set_panel(&mut self, panel: impl Panel + 'static) -> crate::Result<()> {
+        if let Some(item) = self.panel.take() {
             self.root_visual.Children()?.Remove(item.get_visual())?;
         }
         self.root_visual
             .Children()?
-            .InsertAtTop(item.get_visual())?;
-        self.item = Some(Box::new(item));
+            .InsertAtTop(panel.get_visual())?;
+        self.panel = Some(Box::new(panel));
         Ok(())
     }
-    fn item(&self) -> Option<Box<dyn Panel>> {
-        self.item.clone()
+    fn panel(&self) -> Option<Box<dyn Panel>> {
+        self.panel.clone()
     }
     fn handle_event(&self, event: &PanelEvent) -> crate::Result<()> {
         match &event.data {
@@ -75,7 +78,7 @@ impl Root {
                 if let Some(root) = wroot.upgrade() {
                     let event = PanelEvent::from_window_event(event);
                     root.async_handle_event(&event).await?;
-                    if let Some(item) = root.item().as_mut() {
+                    if let Some(item) = root.panel().as_mut() {
                         item.on_panel_event(event).await?
                     }
                 } else {
