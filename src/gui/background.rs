@@ -1,9 +1,5 @@
 use async_object_derive::{async_object_decl, async_object_impl};
 use float_ord::FloatOrd;
-use futures::{
-    task::{Spawn, SpawnExt},
-    StreamExt,
-};
 use typed_builder::TypedBuilder;
 use windows::{
     Foundation::Numerics::Vector2,
@@ -13,35 +9,19 @@ use windows::{
     },
 };
 
-use crate::async_handle_err;
-use crate::gui::Slot;
-use crate::gui::SlotPlug;
-use crate::gui::WSlot;
-
-use super::slot::SlotEventData;
-
 #[async_object_decl(pub Background, pub WBackground)]
-pub struct BackgroundIimpl {
+pub struct BackgroundImpl {
     compositor: Compositor,
-    slot: SlotPlug,
     shape: ShapeVisual,
     round_corners: bool,
     color: Color,
 }
 
-impl BackgroundIimpl {
-    fn new(
-        compositor: &Compositor,
-        slot: &mut Slot,
-        color: Color,
-        round_corners: bool,
-    ) -> crate::Result<Self> {
-        let compositor = compositor.clone();
+impl BackgroundImpl {
+    fn new(compositor: Compositor, color: Color, round_corners: bool) -> crate::Result<Self> {
         let shape = compositor.CreateShapeVisual()?;
-        let slot = slot.plug(shape.clone().into())?;
         let background = Self {
             compositor,
-            slot,
             shape,
             color,
             round_corners,
@@ -85,7 +65,7 @@ impl BackgroundIimpl {
 }
 
 #[async_object_impl(Background, WBackground)]
-impl BackgroundIimpl {
+impl BackgroundImpl {
     pub fn set_color(&mut self, color: Color) -> crate::Result<()> {
         self.color = color;
         self.redraw()?;
@@ -104,44 +84,11 @@ impl BackgroundIimpl {
     pub fn color(&self) -> Color {
         self.color
     }
-
-    pub fn slot(&self) -> WSlot {
-        self.slot.slot()
-    }
 }
 
 impl Background {
-    pub fn new(
-        spawner: impl Spawn + Clone,
-        compositor: &Compositor,
-        slot: &mut Slot,
-        color: Color,
-        round_corners: bool,
-    ) -> crate::Result<Self> {
-        let background = Self::create(BackgroundIimpl::new(
-            compositor,
-            slot,
-            color,
-            round_corners,
-        )?);
-        let future = async_handle_err({
-            let mut stream = slot.create_slot_event_stream();
-            let mut background = background.downgrade();
-            async move {
-                while let Some(event) = stream.next().await {
-                    match event.as_ref().data {
-                        SlotEventData::Resized(size) => {
-                            if background.async_set_size(size).await?.is_none() {
-                                break;
-                            }
-                        }
-                        _ => (),
-                    };
-                }
-                Ok(())
-            }
-        });
-        spawner.spawn(future)?;
+    pub fn new(compositor: Compositor, color: Color, round_corners: bool) -> crate::Result<Self> {
+        let background = Self::create(BackgroundImpl::new(compositor, color, round_corners)?);
         Ok(background)
     }
 }
@@ -153,12 +100,7 @@ pub struct BackgroundBuilder {
 }
 
 impl BackgroundBuilder {
-    pub fn new(
-        self,
-        spawner: impl Spawn + Clone,
-        compositor: &Compositor,
-        slot: &mut Slot,
-    ) -> crate::Result<Background> {
-        Background::new(spawner, compositor, slot, self.color, self.round_corners)
+    pub fn new(self, compositor: Compositor) -> crate::Result<Background> {
+        Background::new(compositor, self.color, self.round_corners)
     }
 }

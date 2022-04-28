@@ -62,7 +62,7 @@ impl Root {
     pub fn new(pool: impl Spawn, compositor: &Compositor, size: Vector2) -> crate::Result<Self> {
         let (tx_event_channel, mut rx_event_channel) = channel(1024 * 64);
         let root = RootImpl::new(compositor, size, tx_event_channel)?;
-        let root = Root::create(root)?;
+        let root = Root::create(root);
         let wroot = root.downgrade();
         let root_slot = root.slot();
         pool.spawn(async_handle_err(async move {

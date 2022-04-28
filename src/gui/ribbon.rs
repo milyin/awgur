@@ -1,19 +1,13 @@
-use crate::async_handle_err;
-
-use super::{
-    is_translated_point_in_box,
-    slot::{SlotEventData, SlotEventSource},
-    IntoVector2, Slot, SlotEvent, SlotPlug,
-};
-use async_object::Event;
+use super::{is_translated_point_in_box, slot::SlotEventData, IntoVector2, Plug, SlotEvent};
 use async_object_derive::{async_object_decl, async_object_impl};
+use async_trait::async_trait;
 use futures::{
     task::{Spawn, SpawnExt},
     StreamExt,
 };
 use windows::{
     Foundation::Numerics::{Vector2, Vector3},
-    UI::Composition::{Compositor, ContainerVisual},
+    UI::Composition::{Compositor, ContainerVisual, Visual},
 };
 use winit::event::{ElementState, MouseButton};
 
@@ -67,12 +61,19 @@ impl Default for CellLimit {
 
 #[derive(Clone)]
 pub struct Cell {
-    slot: Slot,
+    item: Box<dyn Plug>,
     container: ContainerVisual,
     limit: CellLimit,
 }
 
 impl Cell {
+    fn new(item: impl Plug + 'static, container: ContainerVisual, limit: CellLimit) -> Self {
+        Self {
+            item: Box::new(item),
+            container,
+            limit,
+        }
+    }
     fn translate_point(&self, mut point: Vector2) -> crate::Result<Vector2> {
         let offset = self.container.Offset()?;
         point.X -= offset.X;
@@ -94,16 +95,21 @@ impl Cell {
     }
 }
 
+impl Drop for Cell {
+    fn drop(&mut self) {
+        self.container.Children().unwrap().RemoveAll().unwrap()
+    }
+}
+
 impl PartialEq for Cell {
     fn eq(&self, other: &Self) -> bool {
-        self.slot == other.slot
+        self.item.as_ref() as *const dyn Plug == other.item.as_ref() as *const dyn Plug
     }
 }
 
 #[async_object_decl(pub Ribbon, pub WRibbon)]
 pub struct RibbonImpl {
     compositor: Compositor,
-    slot_plug: SlotPlug,
     container: ContainerVisual,
     orientation: RibbonOrientation,
     cells: Vec<Cell>,
@@ -112,47 +118,29 @@ pub struct RibbonImpl {
 
 impl RibbonImpl {
     fn new(
-        compositor: &Compositor,
-        mut slot: Slot,
+        compositor: Compositor,
+        container: ContainerVisual,
         orientation: RibbonOrientation,
-    ) -> crate::Result<Self> {
-        let compositor = compositor.clone();
-        let container = compositor.CreateContainerVisual()?;
-        let slot_plug = slot.plug(container.clone().into())?;
-        Ok(Self {
+    ) -> Self {
+        Self {
             compositor,
-            slot_plug,
             container,
             orientation,
             cells: Vec::new(),
             mouse_pos: None,
-        })
+        }
     }
 }
 
 #[async_object_impl(Ribbon, WRibbon)]
 impl RibbonImpl {
-    pub fn add_cell(&mut self, limit: CellLimit) -> crate::Result<Slot> {
+    pub fn add_cell(&mut self, item: impl Plug + 'static, limit: CellLimit) -> crate::Result<()> {
         let container = self.compositor.CreateContainerVisual()?;
-        let slot = Slot::new(
-            container.clone(),
-            format!(
-                "{}/Ribbon_{}",
-                self.slot_plug
-                    .slot()
-                    .name()
-                    .unwrap_or("(dropped)".to_string()),
-                self.cells.len() + 1
-            ),
-        )?;
         self.container.Children()?.InsertAtTop(container.clone())?;
-        self.cells.push(Cell {
-            slot: slot.clone(),
-            container,
-            limit,
-        });
+        container.Children()?.InsertAtTop(item.get_visual())?;
+        self.cells.push(Cell::new(item, container, limit));
         self.resize_cells(self.container.Size()?)?;
-        Ok(slot)
+        Ok(())
     }
     pub fn orientation(&self) -> RibbonOrientation {
         self.orientation
@@ -207,36 +195,34 @@ impl RibbonImpl {
         }
         Ok(())
     }
+    fn plug_get_visual(&self) -> Visual {
+        self.container.clone().into()
+    }
+}
+
+#[async_trait]
+impl Plug for Ribbon {
+    fn get_visual(&self) -> Visual {
+        self.plug_get_visual()
+    }
+    async fn on_slot_event(&mut self, event: SlotEvent) -> crate::Result<()> {
+        self.translate_slot_event(event).await
+    }
+    fn clone_box(&self) -> Box<dyn Plug> {
+        Box::new(self.clone())
+    }
 }
 
 impl Ribbon {
-    pub fn new(
-        spawner: impl Spawn + Clone,
-        compositor: &Compositor,
-        slot: Slot,
-        orientation: RibbonOrientation,
-    ) -> crate::Result<Self> {
-        let ribbon = Self::create(RibbonImpl::new(compositor, slot.clone(), orientation)?);
-        let future = {
-            let mut stream = slot.create_slot_event_stream();
-            let ribbon = ribbon.downgrade();
-            async move {
-                while let Some(event) = stream.next().await {
-                    if let Some(mut ribbon) = ribbon.upgrade() {
-                        ribbon.translate_slot_event(event).await?;
-                    } else {
-                        break;
-                    }
-                }
-                Ok(())
-            }
-        };
-        spawner.spawn(async_handle_err(future))?;
+    pub fn new(compositor: Compositor, orientation: RibbonOrientation) -> crate::Result<Self> {
+        let container = compositor.CreateContainerVisual()?;
+        let ribbon_impl = RibbonImpl::new(compositor, container, orientation);
+        let ribbon = Self::create(ribbon_impl);
         Ok(ribbon)
     }
 
-    async fn translate_slot_event(&mut self, event: Event<SlotEvent>) -> crate::Result<()> {
-        match event.as_ref().data {
+    async fn translate_slot_event(&mut self, event: SlotEvent) -> crate::Result<()> {
+        match event.data {
             SlotEventData::Resized(size) => self.translate_slot_event_resized(event, size).await,
             SlotEventData::MouseInput { state, button, .. } => {
                 self.translate_slot_event_mouse_input(event, state, button)
@@ -250,73 +236,69 @@ impl Ribbon {
         }
     }
 
-    async fn translate_slot_event_default(&mut self, event: Event<SlotEvent>) -> crate::Result<()> {
-        for cell in self.async_cells().await {
-            cell.slot
-                .send_slot_event(SlotEvent::new(
-                    SlotEventSource::SlotEvent(event.clone()),
-                    event.as_ref().data.clone(),
-                ))
-                .await;
+    async fn translate_slot_event_default(&mut self, event: SlotEvent) -> crate::Result<()> {
+        for mut cell in self.async_cells().await {
+            cell.item.on_slot_event(event.clone()).await?;
         }
         Ok(())
     }
 
     async fn translate_slot_event_resized(
         &mut self,
-        event: Event<SlotEvent>,
+        event: SlotEvent,
         size: Vector2,
     ) -> crate::Result<()> {
         self.async_resize_cells(size).await?;
-        for cell in self.cells() {
-            cell.slot
-                .send_slot_event(SlotEvent::new(
-                    SlotEventSource::SlotEvent(event.clone()),
-                    SlotEventData::Resized(cell.slot.async_container().await.Size()?),
+        for mut cell in self.cells() {
+            let size = cell.item.get_visual().Size()?;
+            cell.item
+                .on_slot_event(SlotEvent::new(
+                    event.source.clone(),
+                    SlotEventData::Resized(size),
                 ))
-                .await;
+                .await?;
         }
         Ok(())
     }
 
     async fn translate_slot_event_cursor_moved(
         &mut self,
-        event: Event<SlotEvent>,
+        event: SlotEvent,
         mouse_pos: Vector2,
     ) -> crate::Result<()> {
         self.async_set_mouse_pos(mouse_pos).await;
-        for cell in self.async_cells().await {
+        for mut cell in self.async_cells().await {
             let mouse_pos = cell.translate_point(mouse_pos)?;
-            cell.slot
-                .send_slot_event(SlotEvent::new(
-                    SlotEventSource::SlotEvent(event.clone()),
+            cell.item
+                .on_slot_event(SlotEvent::new(
+                    event.source.clone(),
                     SlotEventData::CursorMoved(mouse_pos),
                 ))
-                .await;
+                .await?;
         }
         Ok(())
     }
 
     async fn translate_slot_event_mouse_input(
         &mut self,
-        event: Event<SlotEvent>,
+        event: SlotEvent,
         state: ElementState,
         button: MouseButton,
     ) -> crate::Result<()> {
         if let Some(mouse_pos) = self.async_get_mouse_pos().await {
-            for cell in self.async_cells().await {
+            for mut cell in self.async_cells().await {
                 let mouse_pos = cell.translate_point(mouse_pos)?;
                 let in_slot = cell.is_translated_point_in_cell(mouse_pos)?;
-                cell.slot
-                    .send_slot_event(SlotEvent::new(
-                        SlotEventSource::SlotEvent(event.clone()),
+                cell.item
+                    .on_slot_event(SlotEvent::new(
+                        event.source.clone(),
                         SlotEventData::MouseInput {
                             in_slot,
                             state,
                             button,
                         },
                     ))
-                    .await;
+                    .await?;
             }
         }
         Ok(())

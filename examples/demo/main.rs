@@ -2,8 +2,8 @@ use futures::{executor::ThreadPool, StreamExt};
 use wag::{
     async_handle_err,
     gui::{
-        Background, BackgroundBuilder, Button, ButtonDefaultDesign, ButtonEvent, ButtonEventData,
-        CellLimit, LayerStack, Ribbon, RibbonOrientation, Root, SlotEventData, WBackground,
+        Background, BackgroundBuilder, Button, ButtonEvent, ButtonEventData, ButtonSkin, CellLimit,
+        LayerStack, Ribbon, RibbonOrientation, Root, SlotEventData, WBackground,
     },
     window::{
         initialize_window_thread,
@@ -26,68 +26,61 @@ fn main() -> wag::Result<()> {
     //     CanvasComposition::CreateCompositionGraphicsDevice(&compositor, &canvas_device)?;
 
     let root = Root::new(&pool, &compositor, Vector2 { X: 800., Y: 600. })?;
-    let mut layer_stack = LayerStack::new(pool.clone(), &compositor, &mut root.slot())?;
-    let layer = layer_stack.add_layer()?;
-
-    let mut vribbon = Ribbon::new(
-        pool.clone(),
-        &compositor,
-        layer,
-        RibbonOrientation::Vertical,
-    )?;
-
+    let mut layer_stack = LayerStack::new(pool.clone(), compositor.clone())?;
+    let mut vribbon = Ribbon::new(pool.clone(), compositor, RibbonOrientation::Vertical)?;
+    layer_stack.add_layer(vribbon.clone());
     let mut hribbon = Ribbon::new(
         pool.clone(),
-        &compositor,
-        vribbon.add_cell(CellLimit::new(4., 100., None, None))?,
+        compositor.clone(),
         RibbonOrientation::Horizontal,
     )?;
-    let mut button_slot = vribbon.add_cell(CellLimit::new(
+    vribbon.add_cell(hribbon.clone(), CellLimit::new(4., 100., None, None))?,
+    
+   let button = Background::new(
+        pool.clone(),
+        &compositor,
+        button_slot.clone(),
+        Colors::Pink()?,
+        true,
+    )?;
+    // let button = Button::new(pool.clone(), &compositor, &mut button_slot)?;
+    // let button_skin = ButtonSkin::new(
+    //     pool.clone(),
+    //     &compositor,
+    //     &mut button.slot(),
+    //     button.create_button_event_stream(),
+    // )?;
+    vribbon.add_cell(
+        button.clone(),
+        CellLimit::new(
         1.,
         50.,
         Some(300.),
         Some(Vector2 { X: 0.5, Y: 0.8 }),
     ))?;
-    // let button = Background::new(
-    //     pool.clone(),
-    //     &compositor,
-    //     button_slot.clone(),
-    //     Colors::Pink()?,
-    //     true,
-    // )?;
-    let button = Button::new(pool.clone(), &compositor, &mut button_slot)?;
-    let button_design = ButtonDefaultDesign::new(
-        pool.clone(),
-        &compositor,
-        &mut button.slot(),
-        button.create_button_event_stream(),
-    )?;
-
-    let mut red_slot = hribbon.add_cell(CellLimit::default())?;
-    let mut green_slot = hribbon.add_cell(CellLimit::default())?;
-    let mut blue_slot = hribbon.add_cell(CellLimit::default())?;
+ 
     let red_surface = Background::new(
         pool.clone(),
         &compositor,
-        &mut red_slot,
         Colors::Red()?,
         true,
     )?;
     let green_surface = Background::new(
         pool.clone(),
         &compositor,
-        &mut green_slot,
         Colors::Green()?,
         true,
     )?;
-
     let blue_surface = Background::new(
         pool.clone(),
         &compositor,
-        &mut blue_slot,
         Colors::Blue()?,
         true,
     )?;
+
+     hribbon.add_cell(red_surface, CellLimit::default())?;
+     hribbon.add_cell(green_surface, CellLimit::default())?;
+     hribbon.add_cell(blue_surface, CellLimit::default())?;
 
     async fn rotate_background_colors(
         a: &mut WBackground,

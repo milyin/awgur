@@ -11,6 +11,7 @@ thiserror = "1.0"
 float-ord = "0.3.2"
 winit = "0.26.0"
 typed-builder = "0.9.1"
+async-trait = "0.1.52"
 # bindings = { path = "bindings" }
 
 [dependencies.windows]

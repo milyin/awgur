@@ -1,3 +1,4 @@
+//! # WAG - Windows Asynchronous GUI
 pub mod gui;
 pub mod window;
 

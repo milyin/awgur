@@ -1,5 +1,6 @@
 use async_object::{Event, EventStream};
 use async_object_derive::{async_object_impl, async_object_with_events_decl};
+use async_trait::async_trait;
 use futures::StreamExt;
 use windows::{
     Foundation::Numerics::Vector2,
@@ -28,6 +29,7 @@ pub enum SlotEventSource {
     None,
 }
 
+#[derive(Clone)]
 pub struct SlotEvent {
     pub source: SlotEventSource,
     pub data: SlotEventData,
@@ -92,6 +94,13 @@ pub struct SlotPlug {
 }
 
 impl SlotPlug {
+    pub fn new(plugged_visual: Visual) -> Self {
+        Self {
+            slot: WSlot::default(),
+            plugged_visual,
+        }
+    }
+
     pub fn slot(&self) -> WSlot {
         self.slot.clone()
     }
@@ -109,7 +118,7 @@ impl Drop for SlotPlug {
 
 impl Slot {
     pub fn new(container: ContainerVisual, name: String) -> crate::Result<Self> {
-        let slot = Self::create(SlotImpl::new(container, name))?;
+        let slot = Self::create(SlotImpl::new(container, name));
         Ok(slot)
     }
     pub async fn send_slot_event(&self, event: SlotEvent) {
@@ -129,5 +138,23 @@ impl Slot {
             slot: self.downgrade(),
             plugged_visual: visual,
         })
+    }
+}
+#[async_trait]
+pub trait Plug: Send + Sync {
+    fn get_visual(&self) -> Visual;
+    async fn on_slot_event(&mut self, event: SlotEvent) -> crate::Result<()>;
+    fn clone_box(&self) -> Box<dyn Plug>;
+}
+
+impl Clone for Box<dyn Plug> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
+
+impl<T: Plug> PartialEq<T> for Box<dyn Plug> {
+    fn eq(&self, other: &T) -> bool {
+        self.get_visual() == other.get_visual()
     }
 }
