@@ -6,15 +6,13 @@ use windows::UI::Composition::{Compositor, ContainerVisual};
 #[async_object_with_events_decl(pub LayerStack, pub WLayerStack)]
 struct LayerStackImpl {
     layers: Vec<Box<dyn Plug>>,
-    compositor: Compositor,
     container: ContainerVisual,
 }
 
 impl LayerStackImpl {
-    fn new(compositor: Compositor, container: ContainerVisual) -> Self {
+    fn new(container: ContainerVisual) -> Self {
         Self {
             layers: Vec::new(),
-            compositor: compositor.clone(),
             container,
         }
     }
@@ -92,7 +90,7 @@ impl LayerStackImpl {
 impl LayerStack {
     pub fn new(compositor: Compositor) -> crate::Result<Self> {
         let container = compositor.CreateContainerVisual()?;
-        let layer_stack = Self::create(LayerStackImpl::new(compositor, container));
+        let layer_stack = Self::create(LayerStackImpl::new(container));
         Ok(layer_stack)
     }
 }
