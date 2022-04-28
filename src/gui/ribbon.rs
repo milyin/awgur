@@ -8,7 +8,7 @@ use windows::{
 };
 use winit::event::{ElementState, MouseButton};
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub enum RibbonOrientation {
     Stack,
     Horizontal,
@@ -82,6 +82,8 @@ impl Cell {
         Ok(is_translated_point_in_box(point, size))
     }
     fn resize(&mut self, offset: Vector2, size: Vector2) -> crate::Result<()> {
+        dbg!(size.X);
+        dbg!(size.Y);
         self.container.SetOffset(&Vector3 {
             X: offset.X,
             Y: offset.Y,
@@ -107,7 +109,7 @@ impl PartialEq for Cell {
 #[async_object_with_events_decl(pub Ribbon, pub WRibbon)]
 pub struct RibbonImpl {
     compositor: Compositor,
-    container: ContainerVisual,
+    ribbon_container: ContainerVisual,
     orientation: RibbonOrientation,
     cells: Vec<Cell>,
     mouse_pos: Option<Vector2>,
@@ -116,12 +118,12 @@ pub struct RibbonImpl {
 impl RibbonImpl {
     fn new(
         compositor: Compositor,
-        container: ContainerVisual,
+        ribbon_container: ContainerVisual,
         orientation: RibbonOrientation,
     ) -> Self {
         Self {
             compositor,
-            container,
+            ribbon_container,
             orientation,
             cells: Vec::new(),
             mouse_pos: None,
@@ -131,12 +133,14 @@ impl RibbonImpl {
 
 #[async_object_impl(Ribbon, WRibbon)]
 impl RibbonImpl {
-    pub fn add_cell(&mut self, item: impl Panel + 'static, limit: CellLimit) -> crate::Result<()> {
+    pub fn add_cell(&mut self, panel: impl Panel + 'static, limit: CellLimit) -> crate::Result<()> {
         let container = self.compositor.CreateContainerVisual()?;
-        self.container.Children()?.InsertAtTop(container.clone())?;
-        container.Children()?.InsertAtTop(item.get_visual())?;
-        self.cells.push(Cell::new(item, container, limit));
-        self.resize_cells(self.container.Size()?)?;
+        self.ribbon_container
+            .Children()?
+            .InsertAtTop(container.clone())?;
+        container.Children()?.InsertAtTop(panel.get_visual())?;
+        self.cells.push(Cell::new(panel, container, limit));
+        self.resize_cells(self.ribbon_container.Size()?)?;
         Ok(())
     }
     pub fn orientation(&self) -> RibbonOrientation {
@@ -149,13 +153,14 @@ impl RibbonImpl {
         self.mouse_pos = Some(mouse_pos)
     }
     fn container(&self) -> ContainerVisual {
-        self.container.clone()
+        self.ribbon_container.clone()
     }
 
     fn get_mouse_pos(&mut self) -> Option<Vector2> {
         self.mouse_pos
     }
     fn resize_cells(&mut self, size: Vector2) -> crate::Result<()> {
+        self.ribbon_container.SetSize(size)?;
         if self.orientation == RibbonOrientation::Stack {
             for cell in &mut self.cells {
                 let content_size = size.clone() * cell.limit.content_ratio.clone();
@@ -183,6 +188,9 @@ impl RibbonImpl {
                         Y: sizes[i],
                     }
                 };
+                dbg!(i);
+                dbg!(size.X);
+                dbg!(size.Y);
                 let cell = &mut self.cells[i];
                 let offset = if hor {
                     Vector2 { X: pos, Y: 0. }
@@ -249,9 +257,12 @@ impl Ribbon {
         event: PanelEvent,
         size: Vector2,
     ) -> crate::Result<()> {
+        dbg!(self.orientation());
         self.async_resize_cells(size).await?;
         for mut cell in self.cells() {
-            let size = cell.panel.get_visual().Size()?;
+            let size = cell.container.Size()?;
+            dbg!(size.X);
+            dbg!(size.Y);
             cell.panel
                 .on_panel_event(PanelEvent::new(
                     event.source.clone(),
