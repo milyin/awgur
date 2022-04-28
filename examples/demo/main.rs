@@ -3,7 +3,7 @@ use wag::{
     async_handle_err,
     gui::{
         Background, BackgroundBuilder, Button, ButtonEvent, ButtonEventData, ButtonSkin, CellLimit,
-        LayerStack, Ribbon, RibbonOrientation, Root, SlotEventData, WBackground,
+        LayerStack, Ribbon, RibbonOrientation, Root, PanelEventData, WBackground,
     },
     window::{
         initialize_window_thread,

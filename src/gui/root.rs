@@ -12,12 +12,12 @@ use winit::event::WindowEvent;
 
 use crate::async_handle_err;
 
-use super::{Slot, SlotEvent, SlotEventData};
+use super::{Panel, PanelEvent, PanelEventData};
 
 #[async_object_with_events_decl(pub Root, pub WRoot)]
 struct RootImpl {
+    item: Option<Box<dyn Panel>>,
     root_visual: ContainerVisual,
-    slot: Slot,
     tx_event_channel: Sender<WindowEvent<'static>>,
 }
 
@@ -29,10 +29,9 @@ impl RootImpl {
     ) -> crate::Result<Self> {
         let root_visual = compositor.CreateContainerVisual()?;
         root_visual.SetSize(size)?;
-        let slot = Slot::new(root_visual.clone(), "/".into())?;
         Ok(RootImpl {
+            item: None,
             root_visual,
-            slot,
             tx_event_channel,
         })
     }
@@ -43,15 +42,22 @@ impl RootImpl {
     pub fn tx_event_channel(&self) -> Sender<WindowEvent<'static>> {
         self.tx_event_channel.clone()
     }
-    pub fn slot(&self) -> Slot {
-        self.slot.clone()
+    pub fn set_item(&mut self, item: impl Panel + 'static) -> crate::Result<()> {
+        if let Some(item) = self.item.take() {
+            self.root_visual.Children()?.Remove(item.get_visual())?;
+        }
+        self.root_visual
+            .Children()?
+            .InsertAtTop(item.get_visual())?;
+        self.item = Some(Box::new(item));
+        Ok(())
     }
-    pub fn visual(&self) -> ContainerVisual {
-        self.root_visual.clone()
+    fn item(&self) -> Option<Box<dyn Panel>> {
+        self.item.clone()
     }
-    fn handle_event(&self, event: &SlotEvent) -> crate::Result<()> {
+    fn handle_event(&self, event: &PanelEvent) -> crate::Result<()> {
         match &event.data {
-            SlotEventData::Resized(size) => self.root_visual.SetSize(size)?,
+            PanelEventData::Resized(size) => self.root_visual.SetSize(size)?,
             _ => (),
         };
         Ok(())
@@ -64,13 +70,14 @@ impl Root {
         let root = RootImpl::new(compositor, size, tx_event_channel)?;
         let root = Root::create(root);
         let wroot = root.downgrade();
-        let root_slot = root.slot();
         pool.spawn(async_handle_err(async move {
             while let Some(event) = rx_event_channel.next().await {
                 if let Some(root) = wroot.upgrade() {
-                    let event = SlotEvent::from_window_event(event);
+                    let event = PanelEvent::from_window_event(event);
                     root.async_handle_event(&event).await?;
-                    root_slot.send_slot_event(event).await;
+                    if let Some(item) = root.item().as_mut() {
+                        item.on_panel_event(event).await?
+                    }
                 } else {
                     break;
                 }

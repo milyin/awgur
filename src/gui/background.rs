@@ -1,13 +1,16 @@
 use async_object_derive::{async_object_decl, async_object_impl};
+use async_trait::async_trait;
 use float_ord::FloatOrd;
 use typed_builder::TypedBuilder;
 use windows::{
     Foundation::Numerics::Vector2,
     UI::{
         Color,
-        Composition::{CompositionShape, Compositor, ShapeVisual},
+        Composition::{CompositionShape, Compositor, ShapeVisual, Visual},
     },
 };
+
+use super::{Panel, PanelEvent, PanelEventData};
 
 #[async_object_decl(pub Background, pub WBackground)]
 pub struct BackgroundImpl {
@@ -72,17 +75,21 @@ impl BackgroundImpl {
         Ok(())
     }
 
-    pub fn set_size(&mut self, size: Vector2) -> crate::Result<()> {
-        self.shape.SetSize(size)?;
-        self.redraw()?;
-        Ok(())
-    }
-
     pub fn round_corners(&self) -> bool {
         self.round_corners
     }
     pub fn color(&self) -> Color {
         self.color
+    }
+
+    fn resize(&mut self, size: Vector2) -> crate::Result<()> {
+        self.shape.SetSize(size)?;
+        self.redraw()?;
+        Ok(())
+    }
+
+    fn shape(&self) -> ShapeVisual {
+        self.shape.clone()
     }
 }
 
@@ -90,6 +97,22 @@ impl Background {
     pub fn new(compositor: Compositor, color: Color, round_corners: bool) -> crate::Result<Self> {
         let background = Self::create(BackgroundImpl::new(compositor, color, round_corners)?);
         Ok(background)
+    }
+}
+
+#[async_trait]
+impl Panel for Background {
+    fn get_visual(&self) -> Visual {
+        self.shape().into()
+    }
+    async fn on_panel_event(&mut self, event: PanelEvent) -> crate::Result<()> {
+        if let PanelEventData::Resized(size) = event.data {
+            self.async_resize(size).await?
+        }
+        Ok(())
+    }
+    fn clone_box(&self) -> Box<(dyn Panel + 'static)> {
+        Box::new(self.clone())
     }
 }
 
