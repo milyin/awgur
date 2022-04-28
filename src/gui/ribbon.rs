@@ -2,7 +2,6 @@ use super::{is_translated_point_in_box, slot::SlotEventData, IntoVector2, Plug, 
 use async_object_derive::{async_object_decl, async_object_impl};
 use async_trait::async_trait;
 use futures::{
-    task::{Spawn, SpawnExt},
     StreamExt,
 };
 use windows::{

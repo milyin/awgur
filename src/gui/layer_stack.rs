@@ -1,6 +1,6 @@
 use super::{Plug, SlotEvent, SlotEventData};
 use async_object_derive::{async_object_impl, async_object_with_events_decl};
-use futures::task::Spawn;
+
 use windows::UI::Composition::{Compositor, ContainerVisual};
 
 #[async_object_with_events_decl(pub LayerStack, pub WLayerStack)]
