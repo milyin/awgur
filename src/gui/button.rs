@@ -73,7 +73,7 @@ impl Button {
         compositor: &Compositor,
         slot: &mut Slot,
     ) -> crate::Result<Self> {
-        let button = Self::create(ButtonImpl::new(compositor, slot)?)?;
+        let button = Self::create(ButtonImpl::new(compositor, slot)?);
         let future = {
             let mut stream = slot.create_slot_event_stream();
             let wbutton = button.downgrade();
@@ -137,13 +137,13 @@ impl Button {
     }
 }
 
-#[async_object_decl(pub ButtonDefaultDesign, pub WButtonDefaultDesign)]
-struct ButtonDefaultDesignImpl {
+#[async_object_decl(pub ButtonSkin, pub WButtonSkin)]
+struct ButtonSkinImpl {
     layer_stack: LayerStack,
     background: Background,
 }
 
-impl ButtonDefaultDesignImpl {
+impl ButtonSkinImpl {
     pub fn new(
         spawner: impl Spawn + Clone,
         compositor: &Compositor,
@@ -164,23 +164,22 @@ impl ButtonDefaultDesignImpl {
     }
 }
 
-#[async_object_impl(ButtonDefaultDesign, WButtonDefaultDesign)]
-impl ButtonDefaultDesignImpl {
+#[async_object_impl(ButtonSkin, WButtonSkin)]
+impl ButtonSkinImpl {
     fn background(&self) -> Background {
         self.background.clone()
     }
 }
 
-impl ButtonDefaultDesign {
+impl ButtonSkin {
     pub fn new(
         spawner: impl Spawn + Clone,
         compositor: &Compositor,
         slot: &mut Slot,
         mut button_event_stream: EventStream<ButtonEvent>,
     ) -> crate::Result<Self> {
-        let object =
-            ButtonDefaultDesignImpl::new(spawner.clone(), compositor, slot, Colors::Magenta()?)?;
-        let object = ButtonDefaultDesign::create(object);
+        let object = ButtonSkinImpl::new(spawner.clone(), compositor, slot, Colors::Magenta()?)?;
+        let object = ButtonSkin::create(object);
         let future = {
             let wobject = object.downgrade();
             async move {

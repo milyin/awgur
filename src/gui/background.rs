@@ -1,47 +1,31 @@
-use async_object_derive::{async_object_decl, async_object_impl};
+use async_object::EventStream;
+use async_object_derive::{async_object_impl, async_object_with_events_decl};
+use async_trait::async_trait;
 use float_ord::FloatOrd;
-use futures::{
-    task::{Spawn, SpawnExt},
-    StreamExt,
-};
 use typed_builder::TypedBuilder;
 use windows::{
     Foundation::Numerics::Vector2,
     UI::{
         Color,
-        Composition::{CompositionShape, Compositor, ShapeVisual},
+        Composition::{CompositionShape, Compositor, ShapeVisual, Visual},
     },
 };
 
-use crate::async_handle_err;
-use crate::gui::Slot;
-use crate::gui::SlotPlug;
-use crate::gui::WSlot;
+use super::{Panel, PanelEvent, PanelEventData};
 
-use super::slot::SlotEventData;
-
-#[async_object_decl(pub Background, pub WBackground)]
-pub struct BackgroundIimpl {
+#[async_object_with_events_decl(pub Background, pub WBackground)]
+pub struct BackgroundImpl {
     compositor: Compositor,
-    slot: SlotPlug,
     shape: ShapeVisual,
     round_corners: bool,
     color: Color,
 }
 
-impl BackgroundIimpl {
-    fn new(
-        compositor: &Compositor,
-        slot: &mut Slot,
-        color: Color,
-        round_corners: bool,
-    ) -> crate::Result<Self> {
-        let compositor = compositor.clone();
+impl BackgroundImpl {
+    fn new(compositor: Compositor, color: Color, round_corners: bool) -> crate::Result<Self> {
         let shape = compositor.CreateShapeVisual()?;
-        let slot = slot.plug(shape.clone().into())?;
         let background = Self {
             compositor,
-            slot,
             shape,
             color,
             round_corners,
@@ -85,15 +69,9 @@ impl BackgroundIimpl {
 }
 
 #[async_object_impl(Background, WBackground)]
-impl BackgroundIimpl {
+impl BackgroundImpl {
     pub fn set_color(&mut self, color: Color) -> crate::Result<()> {
         self.color = color;
-        self.redraw()?;
-        Ok(())
-    }
-
-    pub fn set_size(&mut self, size: Vector2) -> crate::Result<()> {
-        self.shape.SetSize(size)?;
         self.redraw()?;
         Ok(())
     }
@@ -105,44 +83,41 @@ impl BackgroundIimpl {
         self.color
     }
 
-    pub fn slot(&self) -> WSlot {
-        self.slot.slot()
+    fn resize(&mut self, size: Vector2) -> crate::Result<()> {
+        self.shape.SetSize(size)?;
+        self.redraw()?;
+        Ok(())
+    }
+
+    fn shape(&self) -> ShapeVisual {
+        self.shape.clone()
     }
 }
 
 impl Background {
-    pub fn new(
-        spawner: impl Spawn + Clone,
-        compositor: &Compositor,
-        slot: &mut Slot,
-        color: Color,
-        round_corners: bool,
-    ) -> crate::Result<Self> {
-        let background = Self::create(BackgroundIimpl::new(
-            compositor,
-            slot,
-            color,
-            round_corners,
-        )?);
-        let future = async_handle_err({
-            let mut stream = slot.create_slot_event_stream();
-            let mut background = background.downgrade();
-            async move {
-                while let Some(event) = stream.next().await {
-                    match event.as_ref().data {
-                        SlotEventData::Resized(size) => {
-                            if background.async_set_size(size).await?.is_none() {
-                                break;
-                            }
-                        }
-                        _ => (),
-                    };
-                }
-                Ok(())
-            }
-        });
-        spawner.spawn(future)?;
+    pub fn new(compositor: Compositor, color: Color, round_corners: bool) -> crate::Result<Self> {
+        let background = Self::create(BackgroundImpl::new(compositor, color, round_corners)?);
         Ok(background)
+    }
+}
+
+#[async_trait]
+impl Panel for Background {
+    fn get_visual(&self) -> Visual {
+        self.shape().into()
+    }
+    async fn on_panel_event(&mut self, event: PanelEvent) -> crate::Result<()> {
+        if let PanelEventData::Resized(size) = event.data {
+            self.async_resize(size).await?;
+        }
+        self.send_event(event).await;
+        Ok(())
+    }
+    fn panel_event_stream(&self) -> EventStream<PanelEvent> {
+        self.create_event_stream()
+    }
+    fn clone_box(&self) -> Box<(dyn Panel + 'static)> {
+        Box::new(self.clone())
     }
 }
 
@@ -153,12 +128,7 @@ pub struct BackgroundBuilder {
 }
 
 impl BackgroundBuilder {
-    pub fn new(
-        self,
-        spawner: impl Spawn + Clone,
-        compositor: &Compositor,
-        slot: &mut Slot,
-    ) -> crate::Result<Background> {
-        Background::new(spawner, compositor, slot, self.color, self.round_corners)
+    pub fn new(self, compositor: Compositor) -> crate::Result<Background> {
+        Background::new(compositor, self.color, self.round_corners)
     }
 }

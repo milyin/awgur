@@ -1,19 +1,17 @@
 mod background;
-mod button;
+// mod button;
 mod layer_stack;
+mod panel;
 mod ribbon;
 mod root;
-mod slot;
 // mod text;
 
 pub use background::{Background, BackgroundBuilder, WBackground};
-pub use button::{
-    Button, ButtonDefaultDesign, ButtonEvent, ButtonEventData, WButton, WButtonDefaultDesign,
-};
+// pub use button::{Button, ButtonEvent, ButtonEventData, ButtonSkin, WButton, WButtonSkin};
 pub use layer_stack::{LayerStack, WLayerStack};
+pub use panel::{Panel, PanelEvent, PanelEventData};
 pub use ribbon::{CellLimit, Ribbon, RibbonOrientation, WRibbon};
 pub use root::{Root, WRoot};
-pub use slot::{Slot, SlotEvent, SlotEventData, SlotEventSource, SlotPlug, WSlot};
 // pub use text::{Text, WText};
 
 use windows::Foundation::Numerics::Vector2;

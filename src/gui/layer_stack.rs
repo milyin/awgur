@@ -1,77 +1,59 @@
-use super::{Slot, SlotEvent, SlotEventData, SlotEventSource, SlotPlug};
-use crate::async_handle_err;
-use async_object::Event;
-use async_object_derive::{async_object_decl, async_object_impl};
-use futures::{
-    task::{Spawn, SpawnExt},
-    StreamExt,
-};
-use windows::UI::Composition::{Compositor, ContainerVisual};
+use super::{Panel, PanelEvent, PanelEventData};
+use async_object::EventStream;
+use async_object_derive::{async_object_impl, async_object_with_events_decl};
+use async_trait::async_trait;
 
-#[async_object_decl(pub LayerStack, pub WLayerStack)]
+use windows::{
+    core::HSTRING,
+    UI::Composition::{Compositor, ContainerVisual, Visual},
+};
+
+#[async_object_with_events_decl(pub LayerStack, pub WLayerStack)]
 struct LayerStackImpl {
-    slots: Vec<Slot>,
-    compositor: Compositor,
-    visual: ContainerVisual,
-    slot_plug: SlotPlug,
+    layers: Vec<Box<dyn Panel>>,
+    container: ContainerVisual,
 }
 
 impl LayerStackImpl {
-    fn new(compositor: &Compositor, slot: &mut Slot) -> crate::Result<Self> {
-        let visual = compositor.CreateContainerVisual()?;
-        let slot_plug = slot.plug(visual.clone().into())?;
-        Ok(Self {
-            slots: Vec::new(),
-            compositor: compositor.clone(),
-            visual,
-            slot_plug,
-        })
+    fn new(container: ContainerVisual) -> Self {
+        Self {
+            layers: Vec::new(),
+            container,
+        }
     }
 }
 
 #[async_object_impl(LayerStack, WLayerStack)]
 impl LayerStackImpl {
-    fn slots(&self) -> Vec<Slot> {
-        self.slots.clone()
+    fn layers(&self) -> Vec<Box<dyn Panel>> {
+        self.layers.clone()
     }
     fn visual(&self) -> ContainerVisual {
-        self.visual.clone()
+        self.container.clone()
     }
 }
 
 impl LayerStack {
-    async fn translate_event_to_all_layers(
-        &mut self,
-        event: Event<SlotEvent>,
-    ) -> crate::Result<()> {
-        for slot in self.slots() {
-            let data = event.as_ref().data.clone();
-            slot.send_slot_event(SlotEvent::new(
-                SlotEventSource::SlotEvent(event.clone()),
-                data.clone(),
-            ))
-            .await;
+    async fn translate_event_to_all_layers(&mut self, event: PanelEvent) -> crate::Result<()> {
+        for mut item in self.layers() {
+            item.on_panel_event(event.clone()).await?;
         }
         Ok(())
     }
-    async fn translate_event_to_top_layer(&mut self, event: Event<SlotEvent>) -> crate::Result<()> {
-        if let Some(slot) = self.async_slots().await.first_mut() {
-            let data = event.as_ref().data.clone();
-            slot.send_slot_event(SlotEvent::new(
-                SlotEventSource::SlotEvent(event.clone()),
-                data.clone(),
-            ))
-            .await;
+    async fn translate_event_to_top_layer(&mut self, event: PanelEvent) -> crate::Result<()> {
+        if let Some(item) = self.async_layers().await.first_mut() {
+            item.on_panel_event(event).await?;
         }
         Ok(())
     }
-    pub async fn translate_slot_event(&mut self, event: Event<SlotEvent>) -> crate::Result<()> {
-        match event.as_ref().data {
-            SlotEventData::Resized(size) => {
+    pub async fn translate_event(&mut self, event: PanelEvent) -> crate::Result<()> {
+        match event.data {
+            PanelEventData::Resized(size) => {
+                let visual = self.async_visual().await;
                 self.async_visual().await.SetSize(size)?;
                 self.translate_event_to_all_layers(event).await
             }
-            SlotEventData::MouseInput { .. } => self.translate_event_to_top_layer(event).await,
+            PanelEventData::MouseInput { .. } => self.translate_event_to_top_layer(event).await,
             _ => self.translate_event_to_all_layers(event).await,
         }
     }
@@ -79,28 +61,17 @@ impl LayerStack {
 
 #[async_object_impl(LayerStack, WLayerStack)]
 impl LayerStackImpl {
-    pub fn add_layer(&mut self) -> crate::Result<Slot> {
-        let container = self.compositor.CreateContainerVisual()?;
-        container.SetSize(self.visual.Size()?)?;
-        self.visual.Children()?.InsertAtTop(container.clone())?;
-        let slot = Slot::new(
-            container,
-            format!(
-                "{}/LayerStack_{}",
-                self.slot_plug
-                    .slot()
-                    .name()
-                    .unwrap_or("(dropped)".to_string()),
-                self.slots.len() + 1
-            ),
-        )?;
-        self.slots.push(slot.clone());
-        Ok(slot)
+    pub fn add_layer(&mut self, panel: impl Panel + 'static) -> crate::Result<()> {
+        let visual = panel.get_visual();
+        visual.SetSize(self.container.Size()?)?;
+        self.container.Children()?.InsertAtTop(visual.clone())?;
+        self.layers.push(Box::new(panel));
+        Ok(())
     }
-    pub fn remove_layer(&mut self, slot: Slot) -> crate::Result<()> {
-        if let Some(index) = self.slots.iter().position(|v| *v == slot) {
-            let slot = self.slots.remove(index);
-            self.visual.Children()?.Remove(slot.container())?;
+    pub fn remove_layer(&mut self, item: impl Panel) -> crate::Result<()> {
+        if let Some(index) = self.layers.iter().position(|v| *v == item) {
+            self.container.Children()?.Remove(item.get_visual())?;
+            self.layers.remove(index);
         }
         Ok(())
     }
@@ -123,27 +94,28 @@ impl LayerStackImpl {
 // }
 
 impl LayerStack {
-    pub fn new(
-        spawner: impl Spawn + Clone,
-        compositor: &Compositor,
-        slot: &mut Slot,
-    ) -> crate::Result<Self> {
-        let layer_stack = Self::create(LayerStackImpl::new(compositor, slot)?);
-        let future = {
-            let mut stream = slot.create_slot_event_stream();
-            let layer_stack = layer_stack.downgrade();
-            async move {
-                while let Some(event) = stream.next().await {
-                    if let Some(mut layer_stack) = layer_stack.upgrade() {
-                        layer_stack.translate_slot_event(event).await?
-                    } else {
-                        break;
-                    }
-                }
-                Ok(())
-            }
-        };
-        spawner.spawn(async_handle_err(future))?;
+    pub fn new(compositor: Compositor) -> crate::Result<Self> {
+        let container = compositor.CreateContainerVisual()?;
+        container.SetComment(HSTRING::from("LAYER_STACK"))?;
+        let layer_stack = Self::create(LayerStackImpl::new(container));
         Ok(layer_stack)
+    }
+}
+
+#[async_trait]
+impl Panel for LayerStack {
+    fn get_visual(&self) -> Visual {
+        self.visual().into()
+    }
+    async fn on_panel_event(&mut self, event: PanelEvent) -> crate::Result<()> {
+        self.translate_event(event.clone()).await?;
+        self.send_event(event).await;
+        Ok(())
+    }
+    fn panel_event_stream(&self) -> EventStream<PanelEvent> {
+        self.create_event_stream()
+    }
+    fn clone_box(&self) -> Box<(dyn Panel + 'static)> {
+        Box::new(self.clone())
     }
 }
