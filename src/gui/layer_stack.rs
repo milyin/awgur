@@ -3,7 +3,10 @@ use async_object::EventStream;
 use async_object_derive::{async_object_impl, async_object_with_events_decl};
 use async_trait::async_trait;
 
-use windows::UI::Composition::{Compositor, ContainerVisual, Visual};
+use windows::{
+    core::HSTRING,
+    UI::Composition::{Compositor, ContainerVisual, Visual},
+};
 
 #[async_object_with_events_decl(pub LayerStack, pub WLayerStack)]
 struct LayerStackImpl {
@@ -46,6 +49,7 @@ impl LayerStack {
     pub async fn translate_event(&mut self, event: PanelEvent) -> crate::Result<()> {
         match event.data {
             PanelEventData::Resized(size) => {
+                let visual = self.async_visual().await;
                 self.async_visual().await.SetSize(size)?;
                 self.translate_event_to_all_layers(event).await
             }
@@ -57,11 +61,11 @@ impl LayerStack {
 
 #[async_object_impl(LayerStack, WLayerStack)]
 impl LayerStackImpl {
-    pub fn add_layer(&mut self, item: impl Panel + 'static) -> crate::Result<()> {
-        let visual = item.get_visual();
+    pub fn add_layer(&mut self, panel: impl Panel + 'static) -> crate::Result<()> {
+        let visual = panel.get_visual();
         visual.SetSize(self.container.Size()?)?;
-        self.container.Children()?.InsertAtTop(visual)?;
-        self.layers.push(Box::new(item));
+        self.container.Children()?.InsertAtTop(visual.clone())?;
+        self.layers.push(Box::new(panel));
         Ok(())
     }
     pub fn remove_layer(&mut self, item: impl Panel) -> crate::Result<()> {
@@ -92,6 +96,7 @@ impl LayerStackImpl {
 impl LayerStack {
     pub fn new(compositor: Compositor) -> crate::Result<Self> {
         let container = compositor.CreateContainerVisual()?;
+        container.SetComment(HSTRING::from("LAYER_STACK"))?;
         let layer_stack = Self::create(LayerStackImpl::new(container));
         Ok(layer_stack)
     }

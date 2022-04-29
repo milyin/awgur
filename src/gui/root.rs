@@ -49,9 +49,9 @@ impl RootImpl {
         if let Some(item) = self.panel.take() {
             self.root_visual.Children()?.Remove(item.get_visual())?;
         }
-        self.root_visual
-            .Children()?
-            .InsertAtTop(panel.get_visual())?;
+        let visual = panel.get_visual();
+        visual.SetSize(self.root_visual.Size()?)?;
+        self.root_visual.Children()?.InsertAtTop(visual)?;
         self.panel = Some(Box::new(panel));
         Ok(())
     }

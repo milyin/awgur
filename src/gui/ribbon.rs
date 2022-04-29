@@ -3,6 +3,7 @@ use async_object::EventStream;
 use async_object_derive::{async_object_impl, async_object_with_events_decl};
 use async_trait::async_trait;
 use windows::{
+    core::HSTRING,
     Foundation::Numerics::{Vector2, Vector3},
     UI::Composition::{Compositor, ContainerVisual, Visual},
 };
@@ -82,21 +83,13 @@ impl Cell {
         Ok(is_translated_point_in_box(point, size))
     }
     fn resize(&mut self, offset: Vector2, size: Vector2) -> crate::Result<()> {
-        dbg!(size.X);
-        dbg!(size.Y);
         self.container.SetOffset(&Vector3 {
             X: offset.X,
             Y: offset.Y,
             Z: 0.,
         })?;
-        self.container.SetSize(size.into_vector2())?;
+        self.container.SetSize(size)?;
         Ok(())
-    }
-}
-
-impl Drop for Cell {
-    fn drop(&mut self) {
-        self.container.Children().unwrap().RemoveAll().unwrap()
     }
 }
 
@@ -188,9 +181,6 @@ impl RibbonImpl {
                         Y: sizes[i],
                     }
                 };
-                dbg!(i);
-                dbg!(size.X);
-                dbg!(size.Y);
                 let cell = &mut self.cells[i];
                 let offset = if hor {
                     Vector2 { X: pos, Y: 0. }
@@ -239,8 +229,9 @@ impl Panel for Ribbon {
 
 impl Ribbon {
     pub fn new(compositor: Compositor, orientation: RibbonOrientation) -> crate::Result<Self> {
-        let container = compositor.CreateContainerVisual()?;
-        let ribbon_impl = RibbonImpl::new(compositor, container, orientation);
+        let ribbon_container = compositor.CreateContainerVisual()?;
+        ribbon_container.SetComment(HSTRING::from("RIBBON_CONTAINER"))?;
+        let ribbon_impl = RibbonImpl::new(compositor, ribbon_container, orientation);
         let ribbon = Self::create(ribbon_impl);
         Ok(ribbon)
     }
@@ -257,12 +248,9 @@ impl Ribbon {
         event: PanelEvent,
         size: Vector2,
     ) -> crate::Result<()> {
-        dbg!(self.orientation());
         self.async_resize_cells(size).await?;
         for mut cell in self.cells() {
             let size = cell.container.Size()?;
-            dbg!(size.X);
-            dbg!(size.Y);
             cell.panel
                 .on_panel_event(PanelEvent::new(
                     event.source.clone(),

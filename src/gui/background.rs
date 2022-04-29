@@ -108,7 +108,7 @@ impl Panel for Background {
     }
     async fn on_panel_event(&mut self, event: PanelEvent) -> crate::Result<()> {
         if let PanelEventData::Resized(size) = event.data {
-            self.async_resize(size).await?
+            self.async_resize(size).await?;
         }
         self.send_event(event).await;
         Ok(())

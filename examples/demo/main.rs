@@ -85,7 +85,6 @@ fn main() -> wag::Result<()> {
     //     root.visual(),
     //     root.tx_event_channel(),
     // )?;
-
     hribbon.add_cell(red_surface, CellLimit::default())?;
     hribbon.add_cell(green_surface, CellLimit::default())?;
     hribbon.add_cell(blue_surface, CellLimit::default())?;
