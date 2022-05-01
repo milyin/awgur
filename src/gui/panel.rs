@@ -1,7 +1,9 @@
+use std::hash::{Hash, Hasher};
+
 use async_object::EventStream;
 use async_trait::async_trait;
 
-use windows::{Foundation::Numerics::Vector2, UI::Composition::Visual};
+use windows::{Foundation::Numerics::Vector2, UI::Composition::ContainerVisual};
 use winit::event::{ElementState, MouseButton, WindowEvent};
 
 use super::IntoVector2;
@@ -48,9 +50,11 @@ impl PanelEvent {
 
 #[async_trait]
 pub trait Panel: Send + Sync {
-    fn get_visual(&self) -> Visual;
-    async fn on_panel_event(&mut self, event: PanelEvent) -> crate::Result<()>;
+    fn id(&self) -> usize;
+    fn attach(&mut self, container: ContainerVisual) -> crate::Result<()>;
+    fn detach(&mut self) -> crate::Result<()>;
     fn panel_event_stream(&self) -> EventStream<PanelEvent>;
+    async fn on_panel_event(&mut self, event: PanelEvent) -> crate::Result<()>;
     fn clone_box(&self) -> Box<dyn Panel>;
 }
 
@@ -60,8 +64,14 @@ impl Clone for Box<dyn Panel> {
     }
 }
 
+impl Hash for Box<dyn Panel> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id().hash(state)
+    }
+}
+
 impl<T: Panel> PartialEq<T> for Box<dyn Panel> {
     fn eq(&self, other: &T) -> bool {
-        self.get_visual() == other.get_visual()
+        self.id() == other.id()
     }
 }

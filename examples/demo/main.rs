@@ -93,7 +93,7 @@ fn main() -> wag::Result<()> {
         button,
         CellLimit::new(1., 50., Some(300.), Some(Vector2 { X: 0.5, Y: 0.8 })),
     )?;
-    layer_stack.add_layer(vribbon)?;
+    layer_stack.add_panel(vribbon)?;
     root.set_panel(layer_stack)?;
 
     let window = Window::new(compositor, "demo", root.visual(), root.tx_event_channel());

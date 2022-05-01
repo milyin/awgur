@@ -1,11 +1,11 @@
-use super::{is_translated_point_in_box, panel::PanelEventData, IntoVector2, Panel, PanelEvent};
+use super::{is_translated_point_in_box, panel::PanelEventData, Panel, PanelEvent};
 use async_object::EventStream;
 use async_object_derive::{async_object_impl, async_object_with_events_decl};
 use async_trait::async_trait;
 use windows::{
     core::HSTRING,
     Foundation::Numerics::{Vector2, Vector3},
-    UI::Composition::{Compositor, ContainerVisual, Visual},
+    UI::Composition::{Compositor, ContainerVisual},
 };
 use winit::event::{ElementState, MouseButton};
 
@@ -126,12 +126,16 @@ impl RibbonImpl {
 
 #[async_object_impl(Ribbon, WRibbon)]
 impl RibbonImpl {
-    pub fn add_cell(&mut self, panel: impl Panel + 'static, limit: CellLimit) -> crate::Result<()> {
+    pub fn add_cell(
+        &mut self,
+        mut panel: impl Panel + 'static,
+        limit: CellLimit,
+    ) -> crate::Result<()> {
         let container = self.compositor.CreateContainerVisual()?;
         self.ribbon_container
             .Children()?
             .InsertAtTop(container.clone())?;
-        container.Children()?.InsertAtTop(panel.get_visual())?;
+        panel.attach(container.clone())?;
         self.cells.push(Cell::new(panel, container, limit));
         self.resize_cells(self.ribbon_container.Size()?)?;
         Ok(())
@@ -145,10 +149,6 @@ impl RibbonImpl {
     fn set_mouse_pos(&mut self, mouse_pos: Vector2) {
         self.mouse_pos = Some(mouse_pos)
     }
-    fn container(&self) -> ContainerVisual {
-        self.ribbon_container.clone()
-    }
-
     fn get_mouse_pos(&mut self) -> Option<Vector2> {
         self.mouse_pos
     }
@@ -193,12 +193,30 @@ impl RibbonImpl {
         }
         Ok(())
     }
+    fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
+        container
+            .Children()?
+            .InsertAtTop(self.ribbon_container.clone())?;
+        Ok(())
+    }
+    fn detach(&mut self) -> crate::Result<()> {
+        if let Ok(parent) = self.ribbon_container.Parent() {
+            parent.Children()?.Remove(&self.ribbon_container)?;
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
 impl Panel for Ribbon {
-    fn get_visual(&self) -> Visual {
-        self.container().into()
+    fn id(&self) -> usize {
+        self.id()
+    }
+    fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
+        self.attach(container)
+    }
+    fn detach(&mut self) -> crate::Result<()> {
+        self.detach()
     }
     async fn on_panel_event(&mut self, event: PanelEvent) -> crate::Result<()> {
         match event.data {

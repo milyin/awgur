@@ -45,13 +45,11 @@ impl RootImpl {
     pub fn visual(&self) -> ContainerVisual {
         self.root_visual.clone()
     }
-    pub fn set_panel(&mut self, panel: impl Panel + 'static) -> crate::Result<()> {
-        if let Some(item) = self.panel.take() {
-            self.root_visual.Children()?.Remove(item.get_visual())?;
+    pub fn set_panel(&mut self, mut panel: impl Panel + 'static) -> crate::Result<()> {
+        if let Some(mut panel) = self.panel.take() {
+            panel.detach()?;
         }
-        let visual = panel.get_visual();
-        visual.SetSize(self.root_visual.Size()?)?;
-        self.root_visual.Children()?.InsertAtTop(visual)?;
+        panel.attach(self.root_visual.clone())?;
         self.panel = Some(Box::new(panel));
         Ok(())
     }

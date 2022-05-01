@@ -5,7 +5,7 @@ use async_trait::async_trait;
 
 use windows::{
     core::HSTRING,
-    UI::Composition::{Compositor, ContainerVisual, Visual},
+    UI::Composition::{Compositor, ContainerVisual},
 };
 
 #[async_object_with_events_decl(pub LayerStack, pub WLayerStack)]
@@ -49,7 +49,6 @@ impl LayerStack {
     pub async fn translate_event(&mut self, event: PanelEvent) -> crate::Result<()> {
         match event.data {
             PanelEventData::Resized(size) => {
-                let visual = self.async_visual().await;
                 self.async_visual().await.SetSize(size)?;
                 self.translate_event_to_all_layers(event).await
             }
@@ -61,17 +60,25 @@ impl LayerStack {
 
 #[async_object_impl(LayerStack, WLayerStack)]
 impl LayerStackImpl {
-    pub fn add_layer(&mut self, panel: impl Panel + 'static) -> crate::Result<()> {
-        let visual = panel.get_visual();
-        visual.SetSize(self.container.Size()?)?;
-        self.container.Children()?.InsertAtTop(visual.clone())?;
+    pub fn add_panel(&mut self, mut panel: impl Panel + 'static) -> crate::Result<()> {
+        panel.attach(self.container.clone())?;
         self.layers.push(Box::new(panel));
         Ok(())
     }
-    pub fn remove_layer(&mut self, item: impl Panel) -> crate::Result<()> {
-        if let Some(index) = self.layers.iter().position(|v| *v == item) {
-            self.container.Children()?.Remove(item.get_visual())?;
+    pub fn remove_panel(&mut self, mut panel: impl Panel) -> crate::Result<()> {
+        if let Some(index) = self.layers.iter().position(|v| *v == panel) {
+            panel.detach()?;
             self.layers.remove(index);
+        }
+        Ok(())
+    }
+    fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
+        container.Children()?.InsertAtTop(self.container.clone())?;
+        Ok(())
+    }
+    fn detach(&mut self) -> crate::Result<()> {
+        if let Ok(parent) = self.container.Parent() {
+            parent.Children()?.Remove(&self.container.clone())?;
         }
         Ok(())
     }
@@ -104,8 +111,14 @@ impl LayerStack {
 
 #[async_trait]
 impl Panel for LayerStack {
-    fn get_visual(&self) -> Visual {
-        self.visual().into()
+    fn id(&self) -> usize {
+        self.id()
+    }
+    fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
+        self.attach(container)
+    }
+    fn detach(&mut self) -> crate::Result<()> {
+        self.detach()
     }
     async fn on_panel_event(&mut self, event: PanelEvent) -> crate::Result<()> {
         self.translate_event(event.clone()).await?;

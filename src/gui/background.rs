@@ -7,7 +7,7 @@ use windows::{
     Foundation::Numerics::Vector2,
     UI::{
         Color,
-        Composition::{CompositionShape, Compositor, ShapeVisual, Visual},
+        Composition::{CompositionShape, Compositor, ContainerVisual, ShapeVisual},
     },
 };
 
@@ -88,9 +88,15 @@ impl BackgroundImpl {
         self.redraw()?;
         Ok(())
     }
-
-    fn shape(&self) -> ShapeVisual {
-        self.shape.clone()
+    fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
+        container.Children()?.InsertAtTop(self.shape.clone())?;
+        Ok(())
+    }
+    fn detach(&mut self) -> crate::Result<()> {
+        if let Ok(parent) = self.shape.Parent() {
+            parent.Children()?.Remove(&self.shape)?;
+        }
+        Ok(())
     }
 }
 
@@ -103,8 +109,14 @@ impl Background {
 
 #[async_trait]
 impl Panel for Background {
-    fn get_visual(&self) -> Visual {
-        self.shape().into()
+    fn id(&self) -> usize {
+        self.id()
+    }
+    fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
+        self.attach(container)
+    }
+    fn detach(&mut self) -> crate::Result<()> {
+        self.detach()
     }
     async fn on_panel_event(&mut self, event: PanelEvent) -> crate::Result<()> {
         if let PanelEventData::Resized(size) = event.data {
