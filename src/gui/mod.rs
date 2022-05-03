@@ -7,6 +7,7 @@ mod root;
 // mod text;
 
 use async_object::EventStream;
+use async_trait::async_trait;
 pub use background::{Background, BackgroundBuilder, WBackground};
 // pub use button::{Button, ButtonEvent, ButtonEventData, ButtonSkin, WButton, WButtonSkin};
 pub use layer_stack::{LayerStack, WLayerStack};
@@ -89,4 +90,9 @@ where
 
 pub trait EventSource<EVT: Send + Sync + 'static> {
     fn event_stream(&self) -> EventStream<EVT>;
+}
+
+#[async_trait]
+pub trait EventSink<EVT: Send + Sync + 'static> {
+    async fn on_event(&mut self, event: EVT) -> crate::Result<()>;
 }

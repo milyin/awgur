@@ -1,4 +1,6 @@
-use super::{is_translated_point_in_box, panel::PanelEventData, EventSource, Panel, PanelEvent};
+use super::{
+    is_translated_point_in_box, panel::PanelEventData, EventSink, EventSource, Panel, PanelEvent,
+};
 use async_object::EventStream;
 use async_object_derive::{async_object_impl, async_object_with_events_decl};
 use async_trait::async_trait;
@@ -207,7 +209,6 @@ impl RibbonImpl {
     }
 }
 
-#[async_trait]
 impl Panel for Ribbon {
     fn id(&self) -> usize {
         self.id()
@@ -218,7 +219,20 @@ impl Panel for Ribbon {
     fn detach(&mut self) -> crate::Result<()> {
         self.detach()
     }
-    async fn on_panel_event(&mut self, event: PanelEvent) -> crate::Result<()> {
+    fn clone_panel(&self) -> Box<dyn Panel> {
+        Box::new(self.clone())
+    }
+}
+
+impl EventSource<PanelEvent> for Ribbon {
+    fn event_stream(&self) -> EventStream<PanelEvent> {
+        self.create_event_stream()
+    }
+}
+
+#[async_trait]
+impl EventSink<PanelEvent> for Ribbon {
+    async fn on_event(&mut self, event: PanelEvent) -> crate::Result<()> {
         match event.data {
             PanelEventData::Resized(size) => {
                 self.translate_panel_event_resized(event.clone(), size)
@@ -237,15 +251,6 @@ impl Panel for Ribbon {
         self.send_event(event).await;
         Ok(())
     }
-    fn clone_panel(&self) -> Box<dyn Panel> {
-        Box::new(self.clone())
-    }
-}
-
-impl EventSource<PanelEvent> for Ribbon {
-    fn event_stream(&self) -> EventStream<PanelEvent> {
-        self.create_event_stream()
-    }
 }
 
 impl Ribbon {
@@ -258,8 +263,9 @@ impl Ribbon {
     }
 
     async fn translate_panel_event_default(&mut self, event: PanelEvent) -> crate::Result<()> {
+        // TODO: run simultaneosuly
         for mut cell in self.async_cells().await {
-            cell.panel.on_panel_event(event.clone()).await?;
+            cell.panel.on_event(event.clone()).await?;
         }
         Ok(())
     }
@@ -270,10 +276,11 @@ impl Ribbon {
         size: Vector2,
     ) -> crate::Result<()> {
         self.async_resize_cells(size).await?;
+        // TODO: run simultaneosuly
         for mut cell in self.cells() {
             let size = cell.container.Size()?;
             cell.panel
-                .on_panel_event(PanelEvent::new(
+                .on_event(PanelEvent::new(
                     event.source.clone(),
                     PanelEventData::Resized(size),
                 ))
@@ -288,10 +295,11 @@ impl Ribbon {
         mouse_pos: Vector2,
     ) -> crate::Result<()> {
         self.async_set_mouse_pos(mouse_pos).await;
+        // TODO: run simultaneosuly
         for mut cell in self.async_cells().await {
             let mouse_pos = cell.translate_point(mouse_pos)?;
             cell.panel
-                .on_panel_event(PanelEvent::new(
+                .on_event(PanelEvent::new(
                     event.source.clone(),
                     PanelEventData::CursorMoved(mouse_pos),
                 ))
@@ -307,11 +315,12 @@ impl Ribbon {
         button: MouseButton,
     ) -> crate::Result<()> {
         if let Some(mouse_pos) = self.async_get_mouse_pos().await {
+            // TODO: run simultaneosuly
             for mut cell in self.async_cells().await {
                 let mouse_pos = cell.translate_point(mouse_pos)?;
                 let in_slot = cell.is_translated_point_in_cell(mouse_pos)?;
                 cell.panel
-                    .on_panel_event(PanelEvent::new(
+                    .on_event(PanelEvent::new(
                         event.source.clone(),
                         PanelEventData::MouseInput {
                             in_slot,

@@ -77,7 +77,7 @@ impl Root {
                     let event = PanelEvent::from_window_event(event);
                     root.async_handle_event(&event).await?;
                     if let Some(panel) = root.panel().as_mut() {
-                        panel.on_panel_event(event).await?
+                        panel.on_event(event).await?
                     }
                 } else {
                     break;

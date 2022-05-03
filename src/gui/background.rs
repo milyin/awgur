@@ -11,7 +11,7 @@ use windows::{
     },
 };
 
-use super::{EventSource, Panel, PanelEvent, PanelEventData};
+use super::{EventSink, EventSource, Panel, PanelEvent, PanelEventData};
 
 #[async_object_with_events_decl(pub Background, pub WBackground)]
 pub struct BackgroundImpl {
@@ -118,13 +118,6 @@ impl Panel for Background {
     fn detach(&mut self) -> crate::Result<()> {
         self.detach()
     }
-    async fn on_panel_event(&mut self, event: PanelEvent) -> crate::Result<()> {
-        if let PanelEventData::Resized(size) = event.data {
-            self.async_resize(size).await?;
-        }
-        self.send_event(event).await;
-        Ok(())
-    }
     fn clone_panel(&self) -> Box<(dyn Panel + 'static)> {
         Box::new(self.clone())
     }
@@ -133,6 +126,17 @@ impl Panel for Background {
 impl EventSource<PanelEvent> for Background {
     fn event_stream(&self) -> EventStream<PanelEvent> {
         self.create_event_stream()
+    }
+}
+
+#[async_trait]
+impl EventSink<PanelEvent> for Background {
+    async fn on_event(&mut self, event: PanelEvent) -> crate::Result<()> {
+        if let PanelEventData::Resized(size) = event.data {
+            self.async_resize(size).await?;
+        }
+        self.send_event(event).await;
+        Ok(())
     }
 }
 
