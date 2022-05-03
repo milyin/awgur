@@ -1,10 +1,8 @@
-use super::{
-    Background, BackgroundBuilder, LayerStack, Slot, SlotEvent, SlotEventData, SlotEventSource,
-    SlotPlug,
-};
+use super::{Background, BackgroundBuilder, LayerStack, Panel, PanelEvent, PanelEventData};
 use crate::async_handle_err;
 use async_object::{Event, EventStream};
 use async_object_derive::{async_object_decl, async_object_impl, async_object_with_events_decl};
+use async_trait::async_trait;
 use futures::{
     task::{Spawn, SpawnExt},
     StreamExt,
@@ -16,12 +14,12 @@ use windows::UI::{
 use winit::event::{ElementState, MouseButton};
 
 pub struct ButtonEvent {
-    pub source: Event<SlotEvent>,
+    pub source: Event<PanelEvent>,
     pub data: ButtonEventData,
 }
 
 impl ButtonEvent {
-    pub fn new(source: Event<SlotEvent>, data: ButtonEventData) -> Self {
+    pub fn new(source: Event<PanelEvent>, data: ButtonEventData) -> Self {
         Self { source, data }
     }
 }
@@ -34,29 +32,23 @@ pub enum ButtonEventData {
 
 #[async_object_with_events_decl(pub Button, pub WButton)]
 struct ButtonImpl {
-    slot: Slot,
-    _slot_plug: SlotPlug,
+    container: ContainerVisual,
+    skin: Box<dyn ButtonSkin>,
     pressed: bool,
 }
 
 impl ButtonImpl {
-    fn new(compositor: &Compositor, slot: &mut Slot) -> crate::Result<Self> {
-        let visual = compositor.CreateContainerVisual()?;
-        let _slot_plug = slot.plug(visual.clone().into())?;
-        let slot = Slot::new(visual, "button".into())?;
-        Ok(Self {
-            slot,
-            _slot_plug,
+    fn new(container: ContainerVisual) -> Self {
+        let skin = DefaultButtonSkin::new()
+        Self {
+            container,
             pressed: false,
-        })
+        }
     }
 }
 
 #[async_object_impl(Button, WButton)]
 impl ButtonImpl {
-    pub fn slot(&self) -> Slot {
-        self.slot.clone()
-    }
     pub fn press(&mut self) {
         self.pressed = true;
     }
@@ -68,27 +60,9 @@ impl ButtonImpl {
 }
 
 impl Button {
-    pub fn new(
-        spawner: impl Spawn,
-        compositor: &Compositor,
-        slot: &mut Slot,
-    ) -> crate::Result<Self> {
-        let button = Self::create(ButtonImpl::new(compositor, slot)?);
-        let future = {
-            let mut stream = slot.create_slot_event_stream();
-            let wbutton = button.downgrade();
-            async move {
-                while let Some(event) = stream.next().await {
-                    if let Some(mut button) = wbutton.upgrade() {
-                        button.translate_slot_event(event).await?
-                    } else {
-                        break;
-                    }
-                }
-                Ok(())
-            }
-        };
-        spawner.spawn(async_handle_err(future))?;
+    pub fn new(compositor: &Compositor, skin: impl ButtonSkin + 'static) -> crate::Result<Self> {
+        let container = compositor.CreateContainerVisual()?;
+        let button = Self::create(ButtonImpl::new(container));
         Ok(button)
     }
 
@@ -96,16 +70,16 @@ impl Button {
         self.create_event_stream()
     }
 
-    async fn translate_slot_event(&mut self, event: Event<SlotEvent>) -> crate::Result<()> {
-        let data = match &event.as_ref().data {
-            SlotEventData::MouseInput {
+    async fn translate_slot_event(&mut self, event: Event<PanelEvent>) -> crate::Result<()> {
+        match event.as_ref().data {
+            PanelEventData::MouseInput {
                 in_slot,
                 state,
                 button,
             } => {
-                if *button == MouseButton::Left {
-                    if *state == ElementState::Pressed {
-                        if *in_slot {
+                if button == MouseButton::Left {
+                    if state == ElementState::Pressed {
+                        if in_slot {
                             self.async_press().await;
                             self.send_event(ButtonEvent::new(
                                 event.clone(),
@@ -113,37 +87,35 @@ impl Button {
                             ))
                             .await;
                         }
-                    } else if *state == ElementState::Released {
+                    } else if state == ElementState::Released {
                         if self.async_release().await {
                             self.send_event(ButtonEvent::new(
                                 event.clone(),
-                                ButtonEventData::Release(*in_slot),
+                                ButtonEventData::Release(in_slot),
                             ))
                             .await;
                         }
                     }
                 }
-                None
             }
-            data => Some(data.clone()),
+            _ => {}
         };
-        if let Some(data) = data {
-            self.async_slot()
-                .await
-                .send_slot_event(SlotEvent::new(SlotEventSource::SlotEvent(event), data))
-                .await;
-        }
         Ok(())
     }
 }
 
-#[async_object_decl(pub ButtonSkin, pub WButtonSkin)]
-struct ButtonSkinImpl {
+#[async_trait]
+pub trait ButtonSkin: Panel {
+    async fn on_button_event(&mut self, event: PanelEvent) -> crate::Result<()>;
+}
+
+#[async_object_decl(pub DefaultButtonSkin, pub WDefaultButtonSkin)]
+struct DefaultButtonSkinImpl {
     layer_stack: LayerStack,
     background: Background,
 }
 
-impl ButtonSkinImpl {
+impl DefaultButtonSkinImpl {
     pub fn new(
         spawner: impl Spawn + Clone,
         compositor: &Compositor,
@@ -164,22 +136,21 @@ impl ButtonSkinImpl {
     }
 }
 
-#[async_object_impl(ButtonSkin, WButtonSkin)]
-impl ButtonSkinImpl {
+#[async_object_impl(DefaultButtonSkin, WDefaultButtonSkin)]
+impl DefaultButtonSkinImpl {
     fn background(&self) -> Background {
         self.background.clone()
     }
 }
 
-impl ButtonSkin {
+impl DefaultButtonSkin {
     pub fn new(
-        spawner: impl Spawn + Clone,
         compositor: &Compositor,
-        slot: &mut Slot,
         mut button_event_stream: EventStream<ButtonEvent>,
     ) -> crate::Result<Self> {
-        let object = ButtonSkinImpl::new(spawner.clone(), compositor, slot, Colors::Magenta()?)?;
-        let object = ButtonSkin::create(object);
+        let object =
+            DefaultButtonSkinImpl::new(spawner.clone(), compositor, slot, Colors::Magenta()?)?;
+        let object = DefaultButtonSkin::create(object);
         let future = {
             let wobject = object.downgrade();
             async move {

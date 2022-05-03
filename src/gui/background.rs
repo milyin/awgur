@@ -11,7 +11,7 @@ use windows::{
     },
 };
 
-use super::{Panel, PanelEvent, PanelEventData};
+use super::{EventSource, Panel, PanelEvent, PanelEventData};
 
 #[async_object_with_events_decl(pub Background, pub WBackground)]
 pub struct BackgroundImpl {
@@ -125,11 +125,14 @@ impl Panel for Background {
         self.send_event(event).await;
         Ok(())
     }
-    fn panel_event_stream(&self) -> EventStream<PanelEvent> {
-        self.create_event_stream()
-    }
-    fn clone_box(&self) -> Box<(dyn Panel + 'static)> {
+    fn clone_panel(&self) -> Box<(dyn Panel + 'static)> {
         Box::new(self.clone())
+    }
+}
+
+impl EventSource<PanelEvent> for Background {
+    fn event_stream(&self) -> EventStream<PanelEvent> {
+        self.create_event_stream()
     }
 }
 

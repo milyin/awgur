@@ -6,6 +6,7 @@ mod ribbon;
 mod root;
 // mod text;
 
+use async_object::EventStream;
 pub use background::{Background, BackgroundBuilder, WBackground};
 // pub use button::{Button, ButtonEvent, ButtonEventData, ButtonSkin, WButton, WButtonSkin};
 pub use layer_stack::{LayerStack, WLayerStack};
@@ -84,4 +85,8 @@ where
             height: v.Y as u32,
         }
     }
+}
+
+pub trait EventSource<EVT: Send + Sync + 'static> {
+    fn event_stream(&self) -> EventStream<EVT>;
 }

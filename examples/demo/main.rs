@@ -2,8 +2,8 @@ use futures::{executor::ThreadPool, StreamExt};
 use wag::{
     async_handle_err,
     gui::{
-        Background, CellLimit, LayerStack, Panel, PanelEventData, Ribbon, RibbonOrientation, Root,
-        WBackground,
+        Background, CellLimit, EventSource, LayerStack, PanelEventData, Ribbon, RibbonOrientation,
+        Root, WBackground,
     },
     window::{
         initialize_window_thread,
@@ -63,7 +63,7 @@ fn main() -> wag::Result<()> {
         let mut a = red_surface.downgrade();
         let mut b = green_surface.downgrade();
         let mut c = blue_surface.downgrade();
-        let mut stream = button.panel_event_stream();
+        let mut stream = button.event_stream();
         async move {
             while let Some(event) = stream.next().await {
                 if let PanelEventData::MouseInput { .. } = event.as_ref().data {
@@ -85,15 +85,15 @@ fn main() -> wag::Result<()> {
     //     root.visual(),
     //     root.tx_event_channel(),
     // )?;
-    hribbon.add_cell(red_surface, CellLimit::default())?;
-    hribbon.add_cell(green_surface, CellLimit::default())?;
-    hribbon.add_cell(blue_surface, CellLimit::default())?;
-    vribbon.add_cell(hribbon, CellLimit::new(4., 100., None, None))?;
-    vribbon.add_cell(
+    hribbon.add_panel(red_surface, CellLimit::default())?;
+    hribbon.add_panel(green_surface, CellLimit::default())?;
+    hribbon.add_panel(blue_surface, CellLimit::default())?;
+    vribbon.add_panel(hribbon, CellLimit::new(4., 100., None, None))?;
+    vribbon.add_panel(
         button,
         CellLimit::new(1., 50., Some(300.), Some(Vector2 { X: 0.5, Y: 0.8 })),
     )?;
-    layer_stack.add_panel(vribbon)?;
+    layer_stack.push_panel(vribbon)?;
     root.set_panel(layer_stack)?;
 
     let window = Window::new(compositor, "demo", root.visual(), root.tx_event_channel());

@@ -1,4 +1,4 @@
-use super::{is_translated_point_in_box, panel::PanelEventData, Panel, PanelEvent};
+use super::{is_translated_point_in_box, panel::PanelEventData, EventSource, Panel, PanelEvent};
 use async_object::EventStream;
 use async_object_derive::{async_object_impl, async_object_with_events_decl};
 use async_trait::async_trait;
@@ -126,7 +126,7 @@ impl RibbonImpl {
 
 #[async_object_impl(Ribbon, WRibbon)]
 impl RibbonImpl {
-    pub fn add_cell(
+    pub fn add_panel(
         &mut self,
         mut panel: impl Panel + 'static,
         limit: CellLimit,
@@ -237,11 +237,14 @@ impl Panel for Ribbon {
         self.send_event(event).await;
         Ok(())
     }
-    fn panel_event_stream(&self) -> EventStream<PanelEvent> {
-        self.create_event_stream()
-    }
-    fn clone_box(&self) -> Box<dyn Panel> {
+    fn clone_panel(&self) -> Box<dyn Panel> {
         Box::new(self.clone())
+    }
+}
+
+impl EventSource<PanelEvent> for Ribbon {
+    fn event_stream(&self) -> EventStream<PanelEvent> {
+        self.create_event_stream()
     }
 }
 

@@ -1,4 +1,4 @@
-use super::{Panel, PanelEvent, PanelEventData};
+use super::{EventSource, Panel, PanelEvent, PanelEventData};
 use async_object::EventStream;
 use async_object_derive::{async_object_impl, async_object_with_events_decl};
 use async_trait::async_trait;
@@ -60,7 +60,7 @@ impl LayerStack {
 
 #[async_object_impl(LayerStack, WLayerStack)]
 impl LayerStackImpl {
-    pub fn add_panel(&mut self, mut panel: impl Panel + 'static) -> crate::Result<()> {
+    pub fn push_panel(&mut self, mut panel: impl Panel + 'static) -> crate::Result<()> {
         panel.attach(self.container.clone())?;
         self.layers.push(Box::new(panel));
         Ok(())
@@ -125,10 +125,13 @@ impl Panel for LayerStack {
         self.send_event(event).await;
         Ok(())
     }
-    fn panel_event_stream(&self) -> EventStream<PanelEvent> {
-        self.create_event_stream()
-    }
-    fn clone_box(&self) -> Box<(dyn Panel + 'static)> {
+    fn clone_panel(&self) -> Box<(dyn Panel + 'static)> {
         Box::new(self.clone())
+    }
+}
+
+impl EventSource<PanelEvent> for LayerStack {
+    fn event_stream(&self) -> EventStream<PanelEvent> {
+        self.create_event_stream()
     }
 }

@@ -1,12 +1,11 @@
 use std::hash::{Hash, Hasher};
 
-use async_object::EventStream;
 use async_trait::async_trait;
 
 use windows::{Foundation::Numerics::Vector2, UI::Composition::ContainerVisual};
 use winit::event::{ElementState, MouseButton, WindowEvent};
 
-use super::IntoVector2;
+use super::{EventSource, IntoVector2};
 
 #[derive(Clone)]
 pub enum PanelEventData {
@@ -47,20 +46,18 @@ impl PanelEvent {
         Self { source, data }
     }
 }
-
 #[async_trait]
-pub trait Panel: Send + Sync {
+pub trait Panel: Send + Sync + EventSource<PanelEvent> {
     fn id(&self) -> usize;
     fn attach(&mut self, container: ContainerVisual) -> crate::Result<()>;
     fn detach(&mut self) -> crate::Result<()>;
-    fn panel_event_stream(&self) -> EventStream<PanelEvent>;
     async fn on_panel_event(&mut self, event: PanelEvent) -> crate::Result<()>;
-    fn clone_box(&self) -> Box<dyn Panel>;
+    fn clone_panel(&self) -> Box<dyn Panel>;
 }
 
 impl Clone for Box<dyn Panel> {
     fn clone(&self) -> Self {
-        self.clone_box()
+        self.clone_panel()
     }
 }
 
