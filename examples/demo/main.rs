@@ -2,8 +2,8 @@ use futures::{executor::ThreadPool, StreamExt};
 use wag::{
     async_handle_err,
     gui::{
-        Background, CellLimit, EventSource, LayerStack, PanelEventData, Ribbon, RibbonOrientation,
-        Root, WBackground,
+        Background, CellLimit, EventSource, LayerStack, Ribbon, RibbonOrientation, Root,
+        WBackground, PanelEvent,
     },
     window::{
         initialize_window_thread,
@@ -66,7 +66,7 @@ fn main() -> wag::Result<()> {
         let mut stream = button.event_stream();
         async move {
             while let Some(event) = stream.next().await {
-                if let PanelEventData::MouseInput { .. } = event.as_ref().data {
+                if let PanelEvent::MouseInput { .. } = *event.as_ref() {
                     rotate_background_colors(&mut a, &mut b, &mut c).await?;
                 }
                 // if ButtonEventData::Release(true) == event.as_ref().data {

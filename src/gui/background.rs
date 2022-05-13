@@ -1,4 +1,5 @@
-use async_object::EventStream;
+use std::sync::Arc;
+use async_object::{EventBox, EventStream};
 use async_object_derive::{async_object_impl, async_object_with_events_decl};
 use async_trait::async_trait;
 use float_ord::FloatOrd;
@@ -11,7 +12,7 @@ use windows::{
     },
 };
 
-use super::{EventSink, EventSource, Panel, PanelEvent, PanelEventData};
+use super::{EventSink, EventSource, Panel, PanelEvent};
 
 #[async_object_with_events_decl(pub Background, pub WBackground)]
 pub struct BackgroundImpl {
@@ -131,11 +132,15 @@ impl EventSource<PanelEvent> for Background {
 
 #[async_trait]
 impl EventSink<PanelEvent> for Background {
-    async fn on_event(&mut self, event: PanelEvent) -> crate::Result<()> {
-        if let PanelEventData::Resized(size) = event.data {
-            self.async_resize(size).await?;
+    async fn on_event(
+        &mut self,
+        event: PanelEvent,
+        source: Option<Arc<EventBox>>,
+    ) -> crate::Result<()> {
+        if let PanelEvent::Resized(size) = &event {
+            self.async_resize(*size).await?;
         }
-        self.send_event(event).await;
+        self.send_event(event, source).await;
         Ok(())
     }
 }

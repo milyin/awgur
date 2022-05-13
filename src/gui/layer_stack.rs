@@ -1,5 +1,7 @@
-use super::{EventSink, EventSource, Panel, PanelEvent, PanelEventData};
-use async_object::EventStream;
+use std::sync::Arc;
+
+use super::{EventSink, EventSource, Panel, PanelEvent};
+use async_object::{EventBox, EventStream};
 use async_object_derive::{async_object_impl, async_object_with_events_decl};
 use async_trait::async_trait;
 
@@ -34,27 +36,39 @@ impl LayerStackImpl {
 }
 
 impl LayerStack {
-    async fn translate_event_to_all_layers(&mut self, event: PanelEvent) -> crate::Result<()> {
+    async fn translate_event_to_all_layers(
+        &mut self,
+        event: PanelEvent,
+        source: Option<Arc<EventBox>>,
+    ) -> crate::Result<()> {
         // TODO: run simultaneously
         for mut item in self.layers() {
-            item.on_event(event.clone()).await?;
+            item.on_event(event.clone(), source.clone()).await?;
         }
         Ok(())
     }
-    async fn translate_event_to_top_layer(&mut self, event: PanelEvent) -> crate::Result<()> {
+    async fn translate_event_to_top_layer(
+        &mut self,
+        event: PanelEvent,
+        source: Option<Arc<EventBox>>,
+    ) -> crate::Result<()> {
         if let Some(item) = self.async_layers().await.first_mut() {
-            item.on_event(event).await?;
+            item.on_event(event, source).await?;
         }
         Ok(())
     }
-    pub async fn translate_event(&mut self, event: PanelEvent) -> crate::Result<()> {
-        match event.data {
-            PanelEventData::Resized(size) => {
+    pub async fn translate_event(
+        &mut self,
+        event: PanelEvent,
+        source: Option<Arc<EventBox>>,
+    ) -> crate::Result<()> {
+        match event {
+            PanelEvent::Resized(size) => {
                 self.async_visual().await.SetSize(size)?;
-                self.translate_event_to_all_layers(event).await
+                self.translate_event_to_all_layers(event, source).await
             }
-            PanelEventData::MouseInput { .. } => self.translate_event_to_top_layer(event).await,
-            _ => self.translate_event_to_all_layers(event).await,
+            PanelEvent::MouseInput { .. } => self.translate_event_to_top_layer(event, source).await,
+            _ => self.translate_event_to_all_layers(event, source).await,
         }
     }
 }
@@ -133,9 +147,13 @@ impl EventSource<PanelEvent> for LayerStack {
 
 #[async_trait]
 impl EventSink<PanelEvent> for LayerStack {
-    async fn on_event(&mut self, event: PanelEvent) -> crate::Result<()> {
-        self.translate_event(event.clone()).await?;
-        self.send_event(event).await;
+    async fn on_event(
+        &mut self,
+        event: PanelEvent,
+        source: Option<Arc<EventBox>>,
+    ) -> crate::Result<()> {
+        self.translate_event(event.clone(), source.clone()).await?;
+        self.send_event(event, source).await;
         Ok(())
     }
 }

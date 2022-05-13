@@ -1,4 +1,8 @@
+use std::sync::Arc;
+
+use async_object::{EventBox};
 use async_object_derive::{async_object_impl, async_object_with_events_decl};
+use async_trait::async_trait;
 use futures::{
     channel::mpsc::{channel, Sender},
     task::{Spawn, SpawnExt},
@@ -12,7 +16,7 @@ use winit::event::WindowEvent;
 
 use crate::async_handle_err;
 
-use super::{Panel, PanelEvent, PanelEventData};
+use super::{EventSink, Panel, PanelEvent};
 
 #[async_object_with_events_decl(pub Root, pub WRoot)]
 struct RootImpl {
@@ -54,14 +58,41 @@ impl RootImpl {
         Ok(())
     }
     fn panel(&self) -> Option<Box<dyn Panel>> {
-        self.panel.clone()
+        self.panel.as_ref().map(|p| p.clone_panel())
     }
-    fn handle_event(&self, event: &PanelEvent) -> crate::Result<()> {
-        match &event.data {
-            PanelEventData::Resized(size) => self.root_visual.SetSize(size)?,
+    fn handle_event(&self, event: PanelEvent) -> crate::Result<()> {
+        match event {
+            PanelEvent::Resized(size) => self.root_visual.SetSize(size)?,
             _ => (),
         };
         Ok(())
+    }
+}
+
+#[async_trait]
+impl EventSink<PanelEvent> for Root {
+    async fn on_event(
+        &mut self,
+        event: PanelEvent,
+        source: Option<Arc<EventBox>>,
+    ) -> crate::Result<()> {
+        if let Some(mut panel) = self.panel() {
+            self.async_handle_event(event.clone()).await?;
+            panel.on_event(event, source).await?;
+        }
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl EventSink<WindowEvent<'static>> for Root {
+    async fn on_event(
+        &mut self,
+        event: WindowEvent<'static>,
+        source: Option<Arc<EventBox>>,
+    ) -> crate::Result<()> {
+        let event: PanelEvent = event.into();
+        self.on_event(event, source).await
     }
 }
 
@@ -73,12 +104,8 @@ impl Root {
         let wroot = root.downgrade();
         pool.spawn(async_handle_err(async move {
             while let Some(event) = rx_event_channel.next().await {
-                if let Some(root) = wroot.upgrade() {
-                    let event = PanelEvent::from_window_event(event);
-                    root.async_handle_event(&event).await?;
-                    if let Some(panel) = root.panel().as_mut() {
-                        panel.on_event(event).await?
-                    }
+                if let Some(mut root) = wroot.upgrade() {
+                    root.on_event(event, None).await?;
                 } else {
                     break;
                 }

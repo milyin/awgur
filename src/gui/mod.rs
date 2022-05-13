@@ -6,12 +6,14 @@ mod ribbon;
 mod root;
 // mod text;
 
-use async_object::EventStream;
+use std::sync::Arc;
+
+use async_object::{EventBox, EventStream};
 use async_trait::async_trait;
 pub use background::{Background, BackgroundBuilder, WBackground};
 // pub use button::{Button, ButtonEvent, ButtonEventData, ButtonSkin, WButton, WButtonSkin};
 pub use layer_stack::{LayerStack, WLayerStack};
-pub use panel::{Panel, PanelEvent, PanelEventData};
+pub use panel::{Panel, PanelEvent};
 pub use ribbon::{CellLimit, Ribbon, RibbonOrientation, WRibbon};
 pub use root::{Root, WRoot};
 // pub use text::{Text, WText};
@@ -94,5 +96,5 @@ pub trait EventSource<EVT: Send + Sync + 'static> {
 
 #[async_trait]
 pub trait EventSink<EVT: Send + Sync + 'static> {
-    async fn on_event(&mut self, event: EVT) -> crate::Result<()>;
+    async fn on_event(&mut self, event: EVT, source: Option<Arc<EventBox>>) -> crate::Result<()>;
 }

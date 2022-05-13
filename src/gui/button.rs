@@ -1,4 +1,4 @@
-use super::{Background, BackgroundBuilder, LayerStack, Panel, PanelEvent, PanelEventData};
+use super::{Background, BackgroundBuilder, LayerStack, Panel, PanelEvent, PanelEventData, EventSink, EventSource};
 use crate::async_handle_err;
 use async_object::{Event, EventStream};
 use async_object_derive::{async_object_decl, async_object_impl, async_object_with_events_decl};
@@ -104,12 +104,9 @@ impl Button {
     }
 }
 
-#[async_trait]
-pub trait ButtonSkin: Panel {
-    async fn on_button_event(&mut self, event: PanelEvent) -> crate::Result<()>;
-}
+pub trait ButtonSkin: Panel + EventSink<ButtonEvent> {}
 
-#[async_object_decl(pub DefaultButtonSkin, pub WDefaultButtonSkin)]
+#[async_object_with_events_decl(pub DefaultButtonSkin, pub WDefaultButtonSkin)]
 struct DefaultButtonSkinImpl {
     layer_stack: LayerStack,
     background: Background,
@@ -117,18 +114,16 @@ struct DefaultButtonSkinImpl {
 
 impl DefaultButtonSkinImpl {
     pub fn new(
-        spawner: impl Spawn + Clone,
-        compositor: &Compositor,
-        slot: &mut Slot,
+        compositor: Compositor,
         color: Color,
     ) -> crate::Result<Self> {
-        let mut layer_stack = LayerStack::new(spawner.clone(), compositor, slot)?;
-        let mut slot = layer_stack.add_layer()?;
+        let mut layer_stack = LayerStack::new(compositor.clone())?;
         let background = BackgroundBuilder::builder()
             .color(color)
             .round_corners(true)
             .build()
-            .new(spawner, compositor, &mut slot)?;
+            .new(compositor)?;
+            layer_stack.push_panel(background.clone())?;
         Ok(Self {
             layer_stack,
             background,
@@ -138,41 +133,62 @@ impl DefaultButtonSkinImpl {
 
 #[async_object_impl(DefaultButtonSkin, WDefaultButtonSkin)]
 impl DefaultButtonSkinImpl {
-    fn background(&self) -> Background {
-        self.background.clone()
-    }
-}
-
-impl DefaultButtonSkin {
-    pub fn new(
-        compositor: &Compositor,
-        mut button_event_stream: EventStream<ButtonEvent>,
-    ) -> crate::Result<Self> {
-        let object =
-            DefaultButtonSkinImpl::new(spawner.clone(), compositor, slot, Colors::Magenta()?)?;
-        let object = DefaultButtonSkin::create(object);
-        let future = {
-            let wobject = object.downgrade();
-            async move {
-                while let Some(event) = button_event_stream.next().await {
-                    if let Some(mut object) = wobject.upgrade() {
-                        object.async_handle_button_event(event).await?
-                    } else {
-                        break;
-                    }
-                }
-                Ok(())
-            }
-        };
-        spawner.spawn(async_handle_err(future))?;
-        Ok(object)
-    }
-    async fn async_handle_button_event(&mut self, event: Event<ButtonEvent>) -> crate::Result<()> {
-        let mut background = self.async_background().await;
-        match event.as_ref().data {
+    async fn on_button_event(&mut self, event: ButtonEvent) -> crate::Result<()> {
+        match event {
             ButtonEventData::Press => background.async_set_color(Colors::DarkMagenta()?).await?,
             ButtonEventData::Release(_) => background.async_set_color(Colors::Magenta()?).await?,
         }
         Ok(())
     }
+}
+
+impl DefaultButtonSkin {
+    pub fn new(
+        compositor: Compositor,
+    ) -> crate::Result<Self> {
+        let object =
+            DefaultButtonSkinImpl::new(compositor, Colors::Magenta()?)?;
+        let object = DefaultButtonSkin::create(object);
+       Ok(object)
+    }
+}
+
+#[async_trait]
+impl EventSink<ButtonEvent> for DefaultButtonSkin {
+    async fn on_event(&mut self, event: ButtonEvent) -> crate::Result<()> {
+        self.async_on_button_event(event)
+    }
+}
+
+#[async_trait]
+impl EventSink<PanelEvent> for DefaultButtonSkin {
+    async fn on_event(&mut self, event: ButtonEvent) -> crate::Result<()> {
+        self.layer_stack.on_event(event)
+    }
+}
+
+impl EventSource<PanelEvent> for DefaultButtonSkin {
+    fn event_stream(&self) -> EventStream<PanelEvent> {
+        self.create_event_stream()
+    }
+}
+
+impl Panel for DefaultButtonSkin {
+    fn id(&self) -> usize {
+    }
+
+    fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
+        todo!()
+    }
+
+    fn detach(&mut self) -> crate::Result<()> {
+        todo!()
+    }
+
+    fn clone_panel(&self) -> Box<dyn Panel> {
+        todo!()
+    }
+}
+
+impl ButtonSkin for DefaultButtonSkin {
 }

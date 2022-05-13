@@ -1,7 +1,7 @@
-use super::{
-    is_translated_point_in_box, panel::PanelEventData, EventSink, EventSource, Panel, PanelEvent,
-};
-use async_object::EventStream;
+use std::sync::Arc;
+
+use super::{is_translated_point_in_box, EventSink, EventSource, Panel, PanelEvent};
+use async_object::{EventBox, EventStream};
 use async_object_derive::{async_object_impl, async_object_with_events_decl};
 use async_trait::async_trait;
 use windows::{
@@ -232,23 +232,30 @@ impl EventSource<PanelEvent> for Ribbon {
 
 #[async_trait]
 impl EventSink<PanelEvent> for Ribbon {
-    async fn on_event(&mut self, event: PanelEvent) -> crate::Result<()> {
-        match event.data {
-            PanelEventData::Resized(size) => {
-                self.translate_panel_event_resized(event.clone(), size)
+    async fn on_event(
+        &mut self,
+        event: PanelEvent,
+        source: Option<Arc<EventBox>>,
+    ) -> crate::Result<()> {
+        match event {
+            PanelEvent::Resized(size) => {
+                self.translate_panel_event_resized(size, source.clone())
                     .await
             }
-            PanelEventData::MouseInput { state, button, .. } => {
-                self.translate_slot_event_mouse_input(event.clone(), state, button)
+            PanelEvent::MouseInput { state, button, .. } => {
+                self.translate_slot_event_mouse_input(state, button, source.clone())
                     .await
             }
-            PanelEventData::CursorMoved(mouse_pos) => {
-                self.translate_slot_event_cursor_moved(event.clone(), mouse_pos)
+            PanelEvent::CursorMoved(mouse_pos) => {
+                self.translate_slot_event_cursor_moved(mouse_pos, source.clone())
                     .await
             }
-            _ => self.translate_panel_event_default(event.clone()).await,
+            _ => {
+                self.translate_panel_event_default(event.clone(), source.clone())
+                    .await
+            }
         }?;
-        self.send_event(event).await;
+        self.send_event(event, source).await;
         Ok(())
     }
 }
@@ -262,28 +269,29 @@ impl Ribbon {
         Ok(ribbon)
     }
 
-    async fn translate_panel_event_default(&mut self, event: PanelEvent) -> crate::Result<()> {
+    async fn translate_panel_event_default(
+        &mut self,
+        event: PanelEvent,
+        source: Option<Arc<EventBox>>,
+    ) -> crate::Result<()> {
         // TODO: run simultaneosuly
         for mut cell in self.async_cells().await {
-            cell.panel.on_event(event.clone()).await?;
+            cell.panel.on_event(event.clone(), source.clone()).await?;
         }
         Ok(())
     }
 
     async fn translate_panel_event_resized(
         &mut self,
-        event: PanelEvent,
         size: Vector2,
+        source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         self.async_resize_cells(size).await?;
         // TODO: run simultaneosuly
         for mut cell in self.cells() {
             let size = cell.container.Size()?;
             cell.panel
-                .on_event(PanelEvent::new(
-                    event.source.clone(),
-                    PanelEventData::Resized(size),
-                ))
+                .on_event(PanelEvent::Resized(size), source.clone())
                 .await?;
         }
         Ok(())
@@ -291,18 +299,15 @@ impl Ribbon {
 
     async fn translate_slot_event_cursor_moved(
         &mut self,
-        event: PanelEvent,
         mouse_pos: Vector2,
+        source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         self.async_set_mouse_pos(mouse_pos).await;
         // TODO: run simultaneosuly
         for mut cell in self.async_cells().await {
             let mouse_pos = cell.translate_point(mouse_pos)?;
             cell.panel
-                .on_event(PanelEvent::new(
-                    event.source.clone(),
-                    PanelEventData::CursorMoved(mouse_pos),
-                ))
+                .on_event(PanelEvent::CursorMoved(mouse_pos), source.clone())
                 .await?;
         }
         Ok(())
@@ -310,9 +315,9 @@ impl Ribbon {
 
     async fn translate_slot_event_mouse_input(
         &mut self,
-        event: PanelEvent,
         state: ElementState,
         button: MouseButton,
+        source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         if let Some(mouse_pos) = self.async_get_mouse_pos().await {
             // TODO: run simultaneosuly
@@ -320,14 +325,14 @@ impl Ribbon {
                 let mouse_pos = cell.translate_point(mouse_pos)?;
                 let in_slot = cell.is_translated_point_in_cell(mouse_pos)?;
                 cell.panel
-                    .on_event(PanelEvent::new(
-                        event.source.clone(),
-                        PanelEventData::MouseInput {
+                    .on_event(
+                        PanelEvent::MouseInput {
                             in_slot,
                             state,
                             button,
                         },
-                    ))
+                        source.clone(),
+                    )
                     .await?;
             }
         }
