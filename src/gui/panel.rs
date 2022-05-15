@@ -1,7 +1,5 @@
 use std::hash::{Hash, Hasher};
 
-use async_trait::async_trait;
-
 use windows::{Foundation::Numerics::Vector2, UI::Composition::ContainerVisual};
 use winit::event::{ElementState, MouseButton, WindowEvent};
 
@@ -36,7 +34,6 @@ impl From<WindowEvent<'static>> for PanelEvent {
     }
 }
 
-#[async_trait]
 pub trait Panel: Send + Sync + EventSource<PanelEvent> + EventSink<PanelEvent> {
     fn id(&self) -> usize;
     fn attach(&mut self, container: ContainerVisual) -> crate::Result<()>;
