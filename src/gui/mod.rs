@@ -3,7 +3,6 @@ mod button;
 mod layer_stack;
 mod panel;
 mod ribbon;
-mod root;
 // mod text;
 
 use std::sync::Arc;
@@ -13,9 +12,8 @@ use async_trait::async_trait;
 pub use background::{Background, BackgroundBuilder, WBackground};
 pub use button::{Button, ButtonEvent, ButtonSkin, SimpleButtonSkin};
 pub use layer_stack::LayerStack;
-pub use panel::{Panel, PanelEvent};
+pub use panel::{spawn_window_event_receiver, Panel, PanelEvent};
 pub use ribbon::{CellLimit, Ribbon, RibbonOrientation};
-pub use root::{Root, WRoot};
 // pub use text::{Text, WText};
 
 use windows::Foundation::Numerics::Vector2;

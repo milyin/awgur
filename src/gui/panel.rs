@@ -1,11 +1,18 @@
 use std::hash::{Hash, Hasher};
 
+use futures::{
+    channel::mpsc::{channel, Sender},
+    task::{Spawn, SpawnExt},
+    StreamExt,
+};
 use windows::{Foundation::Numerics::Vector2, UI::Composition::ContainerVisual};
 use winit::event::{ElementState, MouseButton, WindowEvent};
 
+use crate::async_handle_err;
+
 use super::{EventSink, EventSource, IntoVector2};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum PanelEvent {
     Resized(Vector2),
     CursorMoved(Vector2),
@@ -57,4 +64,27 @@ impl<T: Panel> PartialEq<T> for Box<dyn Panel> {
     fn eq(&self, other: &T) -> bool {
         self.id() == other.id()
     }
+}
+
+pub fn spawn_window_event_receiver(
+    pool: impl Spawn,
+    panel: impl Panel + 'static,
+    container: ContainerVisual,
+) -> crate::Result<Sender<WindowEvent<'static>>> {
+    let (tx_event_channel, mut rx_event_channel) = channel::<WindowEvent<'static>>(1024 * 64);
+    let mut panel = panel;
+    panel.attach(container.clone())?;
+    pool.spawn(async_handle_err(async move {
+        while let Some(event) = rx_event_channel.next().await {
+            let panel_event = event.into();
+            match &panel_event {
+                // TODO: handle quit here
+                PanelEvent::Resized(size) => container.SetSize(size)?,
+                _ => (),
+            };
+            panel.on_event(panel_event, None).await?;
+        }
+        Ok(())
+    }))?;
+    Ok(tx_event_channel)
 }

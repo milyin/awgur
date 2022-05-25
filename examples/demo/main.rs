@@ -2,8 +2,8 @@ use futures::{executor::ThreadPool, StreamExt};
 use wag::{
     async_handle_err,
     gui::{
-        Background, Button, ButtonEvent, CellLimit, EventSource, LayerStack, Ribbon,
-        RibbonOrientation, Root, SimpleButtonSkin, WBackground,
+        spawn_window_event_receiver, Background, Button, ButtonEvent, CellLimit, EventSource,
+        LayerStack, Ribbon, RibbonOrientation, SimpleButtonSkin, WBackground,
     },
     window::{
         initialize_window_thread,
@@ -25,7 +25,7 @@ fn main() -> wag::Result<()> {
     // let composition_graphics_device =
     //     CanvasComposition::CreateCompositionGraphicsDevice(&compositor, &canvas_device)?;
 
-    let mut root = Root::new(&pool, &compositor, Vector2 { X: 800., Y: 600. })?;
+    // let mut root = Root::new(&pool, &compositor, Vector2 { X: 800., Y: 600. })?;
     let mut layer_stack = LayerStack::new(&compositor)?;
     let mut vribbon = Ribbon::new(compositor.clone(), RibbonOrientation::Vertical)?;
     let mut hribbon = Ribbon::new(compositor.clone(), RibbonOrientation::Horizontal)?;
@@ -93,9 +93,11 @@ fn main() -> wag::Result<()> {
         CellLimit::new(1., 50., Some(300.), Some(Vector2 { X: 0.5, Y: 0.8 })),
     )?;
     layer_stack.push_panel(vribbon)?;
-    root.set_panel(layer_stack)?;
 
-    let window = Window::new(compositor, "demo", root.visual(), root.tx_event_channel());
+    let root_visual = compositor.CreateContainerVisual()?;
+    root_visual.SetSize(Vector2 { X: 800., Y: 600. })?;
+    let channel = spawn_window_event_receiver(&pool, layer_stack, root_visual.clone())?;
+    let window = Window::new(compositor, "demo", root_visual, channel);
     let _window = window.open()?;
     run_message_loop();
 
