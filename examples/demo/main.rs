@@ -2,8 +2,8 @@ use futures::{executor::ThreadPool, StreamExt};
 use wag::{
     async_handle_err,
     gui::{
-        Background, Button, ButtonEvent, CellLimit, DefaultButtonSkin, EventSource, LayerStack,
-        Ribbon, RibbonOrientation, Root, WBackground,
+        Background, Button, ButtonEvent, CellLimit, EventSource, LayerStack, Ribbon,
+        RibbonOrientation, Root, SimpleButtonSkin, WBackground,
     },
     window::{
         initialize_window_thread,
@@ -26,11 +26,12 @@ fn main() -> wag::Result<()> {
     //     CanvasComposition::CreateCompositionGraphicsDevice(&compositor, &canvas_device)?;
 
     let mut root = Root::new(&pool, &compositor, Vector2 { X: 800., Y: 600. })?;
-    let mut layer_stack = LayerStack::new(compositor.clone())?;
+    let mut layer_stack = LayerStack::new(&compositor)?;
     let mut vribbon = Ribbon::new(compositor.clone(), RibbonOrientation::Vertical)?;
     let mut hribbon = Ribbon::new(compositor.clone(), RibbonOrientation::Horizontal)?;
 
-    let button_skin = DefaultButtonSkin::new(compositor.clone())?;
+    // let button_skin = DefaultButtonSkin::new(compositor.clone())?;
+    let button_skin = SimpleButtonSkin::new(compositor.clone(), Colors::Magenta()?)?;
     let button = Button::new(&compositor, button_skin)?;
 
     let red_surface = Background::new(compositor.clone(), Colors::Red()?, true)?;
@@ -42,13 +43,16 @@ fn main() -> wag::Result<()> {
         b: &mut WBackground,
         c: &mut WBackground,
     ) -> wag::Result<()> {
-        let ca = a.async_color().await;
-        let cb = b.async_color().await;
-        let cc = c.async_color().await;
-        if let (Some(ca), Some(cb), Some(cc)) = (ca, cb, cc) {
-            let _ = a.async_set_color(cb).await?;
-            let _ = b.async_set_color(cc).await?;
-            let _ = c.async_set_color(ca).await?;
+        let a = a.upgrade();
+        let b = b.upgrade();
+        let c = c.upgrade();
+        if let (Some(mut a), Some(mut b), Some(mut c)) = (a, b, c) {
+            let ca = a.color();
+            let cb = b.color();
+            let cc = c.color();
+            a.set_color(cb)?;
+            b.set_color(cc)?;
+            c.set_color(ca)?;
         }
         Ok(())
     }

@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use super::{is_translated_point_in_box, EventSink, EventSource, Panel, PanelEvent};
-use async_object::{EventBox, EventStream};
-use async_object_derive::{async_object_impl, async_object_with_events_decl};
+use async_object::{CArc, EArc, EventBox, EventStream};
 use async_trait::async_trait;
 use windows::{
     core::HSTRING,
@@ -101,33 +100,36 @@ impl PartialEq for Cell {
     }
 }
 
-#[async_object_with_events_decl(pub Ribbon, pub WRibbon)]
-pub struct RibbonImpl {
-    compositor: Compositor,
-    ribbon_container: ContainerVisual,
+struct Core {
     orientation: RibbonOrientation,
     cells: Vec<Cell>,
     mouse_pos: Option<Vector2>,
 }
 
-impl RibbonImpl {
-    fn new(
-        compositor: Compositor,
-        ribbon_container: ContainerVisual,
-        orientation: RibbonOrientation,
-    ) -> Self {
-        Self {
-            compositor,
-            ribbon_container,
-            orientation,
-            cells: Vec::new(),
-            mouse_pos: None,
-        }
+impl Core {
+    pub fn orientation(&self) -> RibbonOrientation {
+        self.orientation
+    }
+    pub fn cells(&self) -> Vec<Cell> {
+        self.cells.clone()
+    }
+    fn set_mouse_pos(&mut self, mouse_pos: Vector2) {
+        self.mouse_pos = Some(mouse_pos)
+    }
+    fn get_mouse_pos(&self) -> Option<Vector2> {
+        self.mouse_pos
     }
 }
 
-#[async_object_impl(Ribbon, WRibbon)]
-impl RibbonImpl {
+#[derive(Clone)]
+pub struct Ribbon {
+    compositor: Compositor,
+    ribbon_container: ContainerVisual,
+    core: CArc<Core>,
+    events: EArc,
+}
+
+impl Ribbon {
     pub fn add_panel(
         &mut self,
         mut panel: impl Panel + 'static,
@@ -138,26 +140,16 @@ impl RibbonImpl {
             .Children()?
             .InsertAtTop(container.clone())?;
         panel.attach(container.clone())?;
-        self.cells.push(Cell::new(panel, container, limit));
+        self.core
+            .call_mut(|v| v.cells.push(Cell::new(panel, container, limit)));
         self.resize_cells(self.ribbon_container.Size()?)?;
         Ok(())
     }
-    pub fn orientation(&self) -> RibbonOrientation {
-        self.orientation
-    }
-    pub fn cells(&self) -> Vec<Cell> {
-        self.cells.clone()
-    }
-    fn set_mouse_pos(&mut self, mouse_pos: Vector2) {
-        self.mouse_pos = Some(mouse_pos)
-    }
-    fn get_mouse_pos(&mut self) -> Option<Vector2> {
-        self.mouse_pos
-    }
     fn resize_cells(&mut self, size: Vector2) -> crate::Result<()> {
         self.ribbon_container.SetSize(size)?;
-        if self.orientation == RibbonOrientation::Stack {
-            for cell in &mut self.cells {
+        let (orientation, mut cells) = self.core.call(|v| (v.orientation(), v.cells()));
+        if orientation == RibbonOrientation::Stack {
+            for cell in &mut cells {
                 let content_size = size.clone() * cell.limit.content_ratio.clone();
                 let content_offset = Vector2 {
                     X: (size.X - content_size.X) / 2.,
@@ -166,12 +158,12 @@ impl RibbonImpl {
                 cell.resize(content_offset, content_size)?;
             }
         } else {
-            let limits = self.cells.iter().map(|c| c.limit).collect::<Vec<_>>();
-            let hor = self.orientation == RibbonOrientation::Horizontal;
+            let limits = cells.iter().map(|c| c.limit).collect::<Vec<_>>();
+            let hor = orientation == RibbonOrientation::Horizontal;
             let target = if hor { size.X } else { size.Y };
             let sizes = adjust_cells(limits, target);
             let mut pos: f32 = 0.;
-            for i in 0..self.cells.len() {
+            for i in 0..cells.len() {
                 let size = if hor {
                     Vector2 {
                         X: sizes[i],
@@ -183,7 +175,7 @@ impl RibbonImpl {
                         Y: sizes[i],
                     }
                 };
-                let cell = &mut self.cells[i];
+                let cell = &mut cells[i];
                 let offset = if hor {
                     Vector2 { X: pos, Y: 0. }
                 } else {
@@ -194,6 +186,12 @@ impl RibbonImpl {
             }
         }
         Ok(())
+    }
+}
+
+impl Panel for Ribbon {
+    fn id(&self) -> usize {
+        self.core.id()
     }
     fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
         container
@@ -207,18 +205,6 @@ impl RibbonImpl {
         }
         Ok(())
     }
-}
-
-impl Panel for Ribbon {
-    fn id(&self) -> usize {
-        self.id()
-    }
-    fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
-        self.attach(container)
-    }
-    fn detach(&mut self) -> crate::Result<()> {
-        self.detach()
-    }
     fn clone_panel(&self) -> Box<dyn Panel> {
         Box::new(self.clone())
     }
@@ -226,7 +212,7 @@ impl Panel for Ribbon {
 
 impl EventSource<PanelEvent> for Ribbon {
     fn event_stream(&self) -> EventStream<PanelEvent> {
-        self.create_event_stream()
+        self.events.create_event_stream()
     }
 }
 
@@ -255,7 +241,7 @@ impl EventSink<PanelEvent> for Ribbon {
                     .await
             }
         }?;
-        self.send_event(event, source).await;
+        self.events.send_event(event, source).await;
         Ok(())
     }
 }
@@ -264,9 +250,17 @@ impl Ribbon {
     pub fn new(compositor: Compositor, orientation: RibbonOrientation) -> crate::Result<Self> {
         let ribbon_container = compositor.CreateContainerVisual()?;
         ribbon_container.SetComment(HSTRING::from("RIBBON_CONTAINER"))?;
-        let ribbon_impl = RibbonImpl::new(compositor, ribbon_container, orientation);
-        let ribbon = Self::create(ribbon_impl);
-        Ok(ribbon)
+        let core = CArc::new(Core {
+            orientation,
+            cells: Vec::new(),
+            mouse_pos: None,
+        });
+        Ok(Self {
+            compositor,
+            ribbon_container,
+            core,
+            events: EArc::new(),
+        })
     }
 
     async fn translate_panel_event_default(
@@ -275,7 +269,8 @@ impl Ribbon {
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         // TODO: run simultaneosuly
-        for mut cell in self.async_cells().await {
+        let cells = self.core.async_call(|v| v.cells()).await;
+        for mut cell in cells {
             cell.panel.on_event(event.clone(), source.clone()).await?;
         }
         Ok(())
@@ -286,9 +281,10 @@ impl Ribbon {
         size: Vector2,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
-        self.async_resize_cells(size).await?;
+        self.resize_cells(size)?;
         // TODO: run simultaneosuly
-        for mut cell in self.cells() {
+        let cells = self.core.async_call(|v| v.cells()).await;
+        for mut cell in cells {
             let size = cell.container.Size()?;
             cell.panel
                 .on_event(PanelEvent::Resized(size), source.clone())
@@ -302,9 +298,12 @@ impl Ribbon {
         mouse_pos: Vector2,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
-        self.async_set_mouse_pos(mouse_pos).await;
+        self.core
+            .async_call_mut(|v| v.set_mouse_pos(mouse_pos))
+            .await;
         // TODO: run simultaneosuly
-        for mut cell in self.async_cells().await {
+        let cells = self.core.async_call(|v| v.cells()).await;
+        for mut cell in cells {
             let mouse_pos = cell.translate_point(mouse_pos)?;
             cell.panel
                 .on_event(PanelEvent::CursorMoved(mouse_pos), source.clone())
@@ -319,9 +318,10 @@ impl Ribbon {
         button: MouseButton,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
-        if let Some(mouse_pos) = self.async_get_mouse_pos().await {
+        if let Some(mouse_pos) = self.core.async_call(|v| v.get_mouse_pos()).await {
             // TODO: run simultaneosuly
-            for mut cell in self.async_cells().await {
+            let cells = self.core.async_call(|v| v.cells()).await;
+            for mut cell in cells {
                 let mouse_pos = cell.translate_point(mouse_pos)?;
                 let in_slot = cell.is_translated_point_in_cell(mouse_pos)?;
                 cell.panel

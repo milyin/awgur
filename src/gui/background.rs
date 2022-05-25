@@ -1,8 +1,8 @@
-use std::sync::Arc;
-use async_object::{EventBox, EventStream};
-use async_object_derive::{async_object_impl, async_object_with_events_decl};
+use async_object::{CArc, EArc, EventBox, EventStream, WCArc, WEArc};
 use async_trait::async_trait;
+use derive_weak::Weak;
 use float_ord::FloatOrd;
+use std::sync::Arc;
 use typed_builder::TypedBuilder;
 use windows::{
     Foundation::Numerics::Vector2,
@@ -14,22 +14,33 @@ use windows::{
 
 use super::{EventSink, EventSource, Panel, PanelEvent};
 
-#[async_object_with_events_decl(pub Background, pub WBackground)]
-pub struct BackgroundImpl {
-    compositor: Compositor,
-    shape: ShapeVisual,
+struct Core {
     round_corners: bool,
     color: Color,
 }
 
-impl BackgroundImpl {
-    fn new(compositor: Compositor, color: Color, round_corners: bool) -> crate::Result<Self> {
+#[derive(Clone, Weak)]
+pub struct Background {
+    compositor: Compositor,
+    shape: ShapeVisual,
+    #[weak(WCArc)]
+    core: CArc<Core>,
+    #[weak(WEArc)]
+    events: EArc,
+}
+
+impl Background {
+    pub fn new(compositor: Compositor, color: Color, round_corners: bool) -> crate::Result<Self> {
         let shape = compositor.CreateShapeVisual()?;
+        let core = CArc::new(Core {
+            round_corners,
+            color,
+        });
         let background = Self {
             compositor,
             shape,
-            color,
-            round_corners,
+            core,
+            events: EArc::new(),
         };
         background.redraw()?;
         Ok(background)
@@ -42,10 +53,11 @@ impl BackgroundImpl {
         Ok(())
     }
     fn create_background_shape(&self) -> crate::Result<CompositionShape> {
+        let (round_corners, color) = self.core.call(|v| (v.round_corners, v.color));
         let container_shape = self.compositor.CreateContainerShape()?;
         let rect_geometry = self.compositor.CreateRoundedRectangleGeometry()?;
         rect_geometry.SetSize(self.shape.Size()?)?;
-        if self.round_corners {
+        if round_corners {
             let size = rect_geometry.Size()?;
             let radius = std::cmp::min(FloatOrd(size.X), FloatOrd(size.Y)).0 / 20.;
             rect_geometry.SetCornerRadius(Vector2 {
@@ -55,9 +67,7 @@ impl BackgroundImpl {
         } else {
             rect_geometry.SetCornerRadius(Vector2 { X: 0., Y: 0. })?;
         }
-        let brush = self
-            .compositor
-            .CreateColorBrushWithColor(self.color.clone())?;
+        let brush = self.compositor.CreateColorBrushWithColor(color)?;
         let rect = self
             .compositor
             .CreateSpriteShapeWithGeometry(rect_geometry)?;
@@ -67,27 +77,25 @@ impl BackgroundImpl {
         let shape = container_shape.into();
         Ok(shape)
     }
-}
-
-#[async_object_impl(Background, WBackground)]
-impl BackgroundImpl {
+    pub fn color(&self) -> Color {
+        self.core.call(|v| v.color)
+    }
     pub fn set_color(&mut self, color: Color) -> crate::Result<()> {
-        self.color = color;
+        self.core.call_mut(|v| v.color = color);
         self.redraw()?;
         Ok(())
     }
-
-    pub fn round_corners(&self) -> bool {
-        self.round_corners
-    }
-    pub fn color(&self) -> Color {
-        self.color
-    }
-
     fn resize(&mut self, size: Vector2) -> crate::Result<()> {
         self.shape.SetSize(size)?;
         self.redraw()?;
         Ok(())
+    }
+}
+
+#[async_trait]
+impl Panel for Background {
+    fn id(&self) -> usize {
+        self.core.id()
     }
     fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
         container.Children()?.InsertAtTop(self.shape.clone())?;
@@ -99,26 +107,6 @@ impl BackgroundImpl {
         }
         Ok(())
     }
-}
-
-impl Background {
-    pub fn new(compositor: Compositor, color: Color, round_corners: bool) -> crate::Result<Self> {
-        let background = Self::create(BackgroundImpl::new(compositor, color, round_corners)?);
-        Ok(background)
-    }
-}
-
-#[async_trait]
-impl Panel for Background {
-    fn id(&self) -> usize {
-        self.id()
-    }
-    fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
-        self.attach(container)
-    }
-    fn detach(&mut self) -> crate::Result<()> {
-        self.detach()
-    }
     fn clone_panel(&self) -> Box<(dyn Panel + 'static)> {
         Box::new(self.clone())
     }
@@ -126,7 +114,7 @@ impl Panel for Background {
 
 impl EventSource<PanelEvent> for Background {
     fn event_stream(&self) -> EventStream<PanelEvent> {
-        self.create_event_stream()
+        self.events.create_event_stream()
     }
 }
 
@@ -138,9 +126,9 @@ impl EventSink<PanelEvent> for Background {
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         if let PanelEvent::Resized(size) = &event {
-            self.async_resize(*size).await?;
+            self.resize(*size)?;
         }
-        self.send_event(event, source).await;
+        self.events.send_event(event, source).await;
         Ok(())
     }
 }
