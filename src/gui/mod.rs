@@ -11,7 +11,7 @@ use async_object::{EventBox, EventStream};
 use async_trait::async_trait;
 pub use background::{Background, BackgroundBuilder, WBackground};
 pub use button::{Button, ButtonEvent, ButtonSkin, SimpleButtonSkin};
-pub use layer_stack::LayerStack;
+pub use layer_stack::{LayerStack, LayerStackParams};
 pub use panel::{spawn_window_event_receiver, Panel, PanelEvent};
 pub use ribbon::{CellLimit, Ribbon, RibbonOrientation};
 // pub use text::{Text, WText};

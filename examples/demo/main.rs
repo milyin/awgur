@@ -3,7 +3,7 @@ use wag::{
     async_handle_err,
     gui::{
         spawn_window_event_receiver, Background, Button, ButtonEvent, CellLimit, EventSource,
-        LayerStack, Ribbon, RibbonOrientation, SimpleButtonSkin, WBackground,
+        LayerStackParams, Ribbon, RibbonOrientation, SimpleButtonSkin, WBackground,
     },
     window::{
         initialize_window_thread,
@@ -26,7 +26,6 @@ fn main() -> wag::Result<()> {
     //     CanvasComposition::CreateCompositionGraphicsDevice(&compositor, &canvas_device)?;
 
     // let mut root = Root::new(&pool, &compositor, Vector2 { X: 800., Y: 600. })?;
-    let mut layer_stack = LayerStack::new(&compositor)?;
     let mut vribbon = Ribbon::new(compositor.clone(), RibbonOrientation::Vertical)?;
     let mut hribbon = Ribbon::new(compositor.clone(), RibbonOrientation::Horizontal)?;
 
@@ -92,7 +91,11 @@ fn main() -> wag::Result<()> {
         button,
         CellLimit::new(1., 50., Some(300.), Some(Vector2 { X: 0.5, Y: 0.8 })),
     )?;
-    layer_stack.push_panel(vribbon)?;
+    let layer_stack = LayerStackParams::builder()
+        .compositor(compositor.clone())
+        .build()
+        .push_layer(vribbon)
+        .create()?;
 
     let root_visual = compositor.CreateContainerVisual()?;
     root_visual.SetSize(Vector2 { X: 800., Y: 600. })?;

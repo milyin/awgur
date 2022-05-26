@@ -4,10 +4,8 @@ use super::{EventSink, EventSource, Panel, PanelEvent};
 use async_object::{CArc, EArc, EventBox, EventStream};
 use async_trait::async_trait;
 
-use windows::{
-    core::HSTRING,
-    UI::Composition::{Compositor, ContainerVisual},
-};
+use typed_builder::TypedBuilder;
+use windows::UI::Composition::{Compositor, ContainerVisual};
 
 struct Core {
     layers: Vec<Box<dyn Panel>>,
@@ -25,22 +23,26 @@ impl LayerStack {
         self.core.async_call(|v| v.layers.clone()).await
     }
 
-    pub fn push_panel(&mut self, mut panel: impl Panel + 'static) -> crate::Result<()> {
+    pub async fn push_panel(&mut self, mut panel: impl Panel + 'static) -> crate::Result<()> {
         panel.attach(self.container.clone())?;
-        self.core.call_mut(|v| {
-            v.layers.push(Box::new(panel));
-        });
+        self.core
+            .async_call_mut(|v| {
+                v.layers.push(Box::new(panel));
+            })
+            .await;
         Ok(())
     }
 
-    pub fn remove_panel(&mut self, mut panel: impl Panel) -> crate::Result<()> {
-        self.core.call_mut(|v| {
-            if let Some(index) = v.layers.iter().position(|v| *v == panel) {
-                panel.detach()?;
-                v.layers.remove(index);
-            }
-            crate::Result::Ok(())
-        })?;
+    pub async fn remove_panel(&mut self, mut panel: impl Panel) -> crate::Result<()> {
+        self.core
+            .async_call_mut(|v| {
+                if let Some(index) = v.layers.iter().position(|v| *v == panel) {
+                    panel.detach()?;
+                    v.layers.remove(index);
+                }
+                crate::Result::Ok(())
+            })
+            .await?;
         Ok(())
     }
     async fn translate_event_to_all_layers(
@@ -96,12 +98,27 @@ impl LayerStack {
 //     Ok(())
 // }
 
-impl LayerStack {
-    pub fn new(compositor: &Compositor) -> crate::Result<Self> {
-        let container = compositor.CreateContainerVisual()?;
-        let core = CArc::new(Core { layers: Vec::new() });
-        container.SetComment(HSTRING::from("LAYER_STACK"))?;
-        Ok(Self {
+#[derive(TypedBuilder)]
+pub struct LayerStackParams {
+    compositor: Compositor,
+    #[builder(default)]
+    layers: Vec<Box<dyn Panel>>,
+}
+
+impl LayerStackParams {
+    pub fn push_layer(mut self, panel: impl Panel + 'static) -> Self {
+        self.layers.push(Box::new(panel));
+        self
+    }
+    pub fn create(self) -> crate::Result<LayerStack> {
+        let mut layers = self.layers;
+        let container = self.compositor.CreateContainerVisual()?;
+        for layer in &mut layers {
+            layer.attach(container.clone())?;
+        }
+        let core = CArc::new(Core { layers });
+        // container.SetComment(HSTRING::from("LAYER_STACK"))?;
+        Ok(LayerStack {
             container,
             core,
             events: EArc::new(),

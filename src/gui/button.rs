@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use super::{Background, BackgroundBuilder, EventSink, EventSource, LayerStack, Panel, PanelEvent};
+use super::{
+    Background, BackgroundBuilder, EventSink, EventSource, LayerStack, LayerStackParams, Panel,
+    PanelEvent,
+};
 use async_object::{CArc, EArc, EventBox, EventStream, WCArc};
 use async_trait::async_trait;
 use derive_weak::Weak;
@@ -143,13 +146,16 @@ pub struct SimpleButtonSkin {
 
 impl SimpleButtonSkin {
     pub fn new(compositor: Compositor, color: Color) -> crate::Result<Self> {
-        let mut layer_stack = LayerStack::new(&compositor)?;
         let background = BackgroundBuilder::builder()
             .color(color)
             .round_corners(true)
             .build()
-            .new(compositor)?;
-        layer_stack.push_panel(background.clone())?;
+            .new(compositor.clone())?;
+        let layer_stack = LayerStackParams::builder()
+            .compositor(compositor)
+            .build()
+            .push_layer(background.clone())
+            .create()?;
         let earc = EArc::new();
         Ok(Self {
             layer_stack,
