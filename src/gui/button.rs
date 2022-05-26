@@ -167,8 +167,8 @@ impl EventSink<ButtonEvent> for SimpleButtonSkin {
         _: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         match event {
-            ButtonEvent::Press => self.background.set_color(Colors::DarkMagenta()?)?,
-            ButtonEvent::Release(_) => self.background.set_color(Colors::Magenta()?)?,
+            ButtonEvent::Press => self.background.set_color(Colors::DarkMagenta()?).await?,
+            ButtonEvent::Release(_) => self.background.set_color(Colors::Magenta()?).await?,
         }
         Ok(())
     }

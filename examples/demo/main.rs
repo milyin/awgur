@@ -47,12 +47,12 @@ fn main() -> wag::Result<()> {
         let b = b.upgrade();
         let c = c.upgrade();
         if let (Some(mut a), Some(mut b), Some(mut c)) = (a, b, c) {
-            let ca = a.color();
-            let cb = b.color();
-            let cc = c.color();
-            a.set_color(cb)?;
-            b.set_color(cc)?;
-            c.set_color(ca)?;
+            let ca = a.color().await;
+            let cb = b.color().await;
+            let cc = c.color().await;
+            a.set_color(cb).await?;
+            b.set_color(cc).await?;
+            c.set_color(ca).await?;
         }
         Ok(())
     }

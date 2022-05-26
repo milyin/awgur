@@ -17,46 +17,20 @@ use super::{EventSink, EventSource, Panel, PanelEvent};
 struct Core {
     round_corners: bool,
     color: Color,
-}
-
-#[derive(Clone, Weak)]
-pub struct Background {
     compositor: Compositor,
-    shape: ShapeVisual,
-    #[weak(WCArc)]
-    core: CArc<Core>,
-    #[weak(WEArc)]
-    events: EArc,
+    container: ShapeVisual,
 }
 
-impl Background {
-    pub fn new(compositor: Compositor, color: Color, round_corners: bool) -> crate::Result<Self> {
-        let shape = compositor.CreateShapeVisual()?;
-        let core = CArc::new(Core {
-            round_corners,
-            color,
-        });
-        let background = Self {
-            compositor,
-            shape,
-            core,
-            events: EArc::new(),
-        };
-        background.redraw()?;
-        Ok(background)
-    }
-    fn redraw(&self) -> crate::Result<()> {
-        self.shape.Shapes()?.Clear()?;
-        self.shape
-            .Shapes()?
-            .Append(self.create_background_shape()?)?;
-        Ok(())
-    }
-    fn create_background_shape(&self) -> crate::Result<CompositionShape> {
-        let (round_corners, color) = self.core.call(|v| (v.round_corners, v.color));
-        let container_shape = self.compositor.CreateContainerShape()?;
-        let rect_geometry = self.compositor.CreateRoundedRectangleGeometry()?;
-        rect_geometry.SetSize(self.shape.Size()?)?;
+impl Core {
+    fn create_background_shape(
+        compositor: &Compositor,
+        size: Vector2,
+        round_corners: bool,
+        color: Color,
+    ) -> crate::Result<CompositionShape> {
+        let container_shape = compositor.CreateContainerShape()?;
+        let rect_geometry = compositor.CreateRoundedRectangleGeometry()?;
+        rect_geometry.SetSize(size)?;
         if round_corners {
             let size = rect_geometry.Size()?;
             let radius = std::cmp::min(FloatOrd(size.X), FloatOrd(size.Y)).0 / 20.;
@@ -67,27 +41,68 @@ impl Background {
         } else {
             rect_geometry.SetCornerRadius(Vector2 { X: 0., Y: 0. })?;
         }
-        let brush = self.compositor.CreateColorBrushWithColor(color)?;
-        let rect = self
-            .compositor
-            .CreateSpriteShapeWithGeometry(rect_geometry)?;
+        let brush = compositor.CreateColorBrushWithColor(color)?;
+        let rect = compositor.CreateSpriteShapeWithGeometry(rect_geometry)?;
         rect.SetFillBrush(brush)?;
         rect.SetOffset(Vector2 { X: 0., Y: 0. })?;
         container_shape.Shapes()?.Append(rect)?;
         let shape = container_shape.into();
         Ok(shape)
     }
-    pub fn color(&self) -> Color {
-        self.core.call(|v| v.color)
-    }
-    pub fn set_color(&mut self, color: Color) -> crate::Result<()> {
-        self.core.call_mut(|v| v.color = color);
-        self.redraw()?;
+    fn redraw(&self) -> crate::Result<()> {
+        self.container.Shapes()?.Clear()?;
+        self.container
+            .Shapes()?
+            .Append(Self::create_background_shape(
+                &self.compositor,
+                self.container.Size()?,
+                self.round_corners,
+                self.color,
+            )?)?;
         Ok(())
     }
     fn resize(&mut self, size: Vector2) -> crate::Result<()> {
-        self.shape.SetSize(size)?;
+        self.container.SetSize(size)?;
         self.redraw()?;
+        Ok(())
+    }
+    fn set_color(&mut self, color: Color) -> crate::Result<()> {
+        self.color = color;
+        self.redraw()?;
+        Ok(())
+    }
+}
+
+#[derive(Clone, Weak)]
+pub struct Background {
+    container: ContainerVisual,
+    #[weak(WCArc)]
+    core: CArc<Core>,
+    #[weak(WEArc)]
+    events: EArc,
+}
+
+impl Background {
+    pub fn new(compositor: Compositor, color: Color, round_corners: bool) -> crate::Result<Self> {
+        let container = compositor.CreateShapeVisual()?;
+        let core = CArc::new(Core {
+            round_corners,
+            color,
+            compositor,
+            container: container.clone(),
+        });
+        let background = Self {
+            container: container.into(),
+            core,
+            events: EArc::new(),
+        };
+        Ok(background)
+    }
+    pub async fn color(&self) -> Color {
+        self.core.async_call(|v| v.color).await
+    }
+    pub async fn set_color(&mut self, color: Color) -> crate::Result<()> {
+        self.core.async_call_mut(|v| v.set_color(color)).await?;
         Ok(())
     }
 }
@@ -98,12 +113,12 @@ impl Panel for Background {
         self.core.id()
     }
     fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
-        container.Children()?.InsertAtTop(self.shape.clone())?;
+        container.Children()?.InsertAtTop(self.container.clone())?;
         Ok(())
     }
     fn detach(&mut self) -> crate::Result<()> {
-        if let Ok(parent) = self.shape.Parent() {
-            parent.Children()?.Remove(&self.shape)?;
+        if let Ok(parent) = self.container.Parent() {
+            parent.Children()?.Remove(&self.container)?;
         }
         Ok(())
     }
@@ -126,7 +141,7 @@ impl EventSink<PanelEvent> for Background {
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         if let PanelEvent::Resized(size) = &event {
-            self.resize(*size)?;
+            self.core.async_call_mut(|v| v.resize(*size)).await?;
         }
         self.events.send_event(event, source).await;
         Ok(())
