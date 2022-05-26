@@ -2,9 +2,9 @@ use futures::{executor::ThreadPool, StreamExt};
 use wag::{
     async_handle_err,
     gui::{
-        spawn_window_event_receiver, BackgroundParams, Button, ButtonEvent, ButtonParams,
-        CellLimit, EventSource, LayerStackParams, RibbonOrientation, RibbonParams,
-        SimpleButtonSkinParams, WBackground,
+        spawn_window_event_receiver, BackgroundParams, ButtonEvent, ButtonParams, CellLimit,
+        EventSource, LayerStackParams, RibbonOrientation, RibbonParams, SimpleButtonSkinParams,
+        WBackground,
     },
     window::{
         initialize_window_thread,
