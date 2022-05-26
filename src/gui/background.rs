@@ -82,22 +82,31 @@ pub struct Background {
     events: EArc,
 }
 
-impl Background {
-    pub fn new(compositor: Compositor, color: Color, round_corners: bool) -> crate::Result<Self> {
-        let container = compositor.CreateShapeVisual()?;
+#[derive(TypedBuilder)]
+pub struct BackgroundParams {
+    round_corners: bool,
+    color: Color,
+    compositor: Compositor,
+}
+
+impl BackgroundParams {
+    pub fn create(self) -> crate::Result<Background> {
+        let container = self.compositor.CreateShapeVisual()?;
         let core = CArc::new(Core {
-            round_corners,
-            color,
-            compositor,
+            round_corners: self.round_corners,
+            color: self.color,
+            compositor: self.compositor,
             container: container.clone(),
         });
-        let background = Self {
+        Ok(Background {
             container: container.into(),
             core,
             events: EArc::new(),
-        };
-        Ok(background)
+        })
     }
+}
+
+impl Background {
     pub async fn color(&self) -> Color {
         self.core.async_call(|v| v.color).await
     }
@@ -145,17 +154,5 @@ impl EventSink<PanelEvent> for Background {
         }
         self.events.send_event(event, source).await;
         Ok(())
-    }
-}
-
-#[derive(TypedBuilder)]
-pub struct BackgroundBuilder {
-    round_corners: bool,
-    color: Color,
-}
-
-impl BackgroundBuilder {
-    pub fn new(self, compositor: Compositor) -> crate::Result<Background> {
-        Background::new(compositor, self.color, self.round_corners)
     }
 }

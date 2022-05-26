@@ -106,7 +106,7 @@ pub struct LayerStackParams {
 }
 
 impl LayerStackParams {
-    pub fn push_layer(mut self, panel: impl Panel + 'static) -> Self {
+    pub fn push_panel(mut self, panel: impl Panel + 'static) -> Self {
         self.layers.push(Box::new(panel));
         self
     }

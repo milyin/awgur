@@ -2,8 +2,9 @@ use futures::{executor::ThreadPool, StreamExt};
 use wag::{
     async_handle_err,
     gui::{
-        spawn_window_event_receiver, Background, Button, ButtonEvent, CellLimit, EventSource,
-        LayerStackParams, Ribbon, RibbonOrientation, SimpleButtonSkin, WBackground,
+        spawn_window_event_receiver, BackgroundParams, Button, ButtonEvent, ButtonParams,
+        CellLimit, EventSource, LayerStackParams, RibbonOrientation, RibbonParams,
+        SimpleButtonSkinParams, WBackground,
     },
     window::{
         initialize_window_thread,
@@ -25,17 +26,35 @@ fn main() -> wag::Result<()> {
     // let composition_graphics_device =
     //     CanvasComposition::CreateCompositionGraphicsDevice(&compositor, &canvas_device)?;
 
-    // let mut root = Root::new(&pool, &compositor, Vector2 { X: 800., Y: 600. })?;
-    let mut vribbon = Ribbon::new(compositor.clone(), RibbonOrientation::Vertical)?;
-    let mut hribbon = Ribbon::new(compositor.clone(), RibbonOrientation::Horizontal)?;
+    let button_skin = SimpleButtonSkinParams::builder()
+        .compositor(compositor.clone())
+        .color(Colors::Magenta()?)
+        .build()
+        .create()?;
+    let button = ButtonParams::builder()
+        .skin(button_skin)
+        .compositor(compositor.clone())
+        .build()
+        .create()?;
 
-    // let button_skin = DefaultButtonSkin::new(compositor.clone())?;
-    let button_skin = SimpleButtonSkin::new(compositor.clone(), Colors::Magenta()?)?;
-    let button = Button::new(&compositor, button_skin)?;
-
-    let red_surface = Background::new(compositor.clone(), Colors::Red()?, true)?;
-    let green_surface = Background::new(compositor.clone(), Colors::Green()?, true)?;
-    let blue_surface = Background::new(compositor.clone(), Colors::Blue()?, true)?;
+    let red_surface = BackgroundParams::builder()
+        .compositor(compositor.clone())
+        .color(Colors::Red()?)
+        .round_corners(true)
+        .build()
+        .create()?;
+    let green_surface = BackgroundParams::builder()
+        .compositor(compositor.clone())
+        .color(Colors::Green()?)
+        .round_corners(true)
+        .build()
+        .create()?;
+    let blue_surface = BackgroundParams::builder()
+        .compositor(compositor.clone())
+        .color(Colors::Blue()?)
+        .round_corners(true)
+        .build()
+        .create()?;
 
     async fn rotate_background_colors(
         a: &mut WBackground,
@@ -75,26 +94,30 @@ fn main() -> wag::Result<()> {
         }
     }));
 
-    // let window = Window::new(
-    //     &compositor,
-    //     "demo",
-    //     800,
-    //     600,
-    //     root.visual(),
-    //     root.tx_event_channel(),
-    // )?;
-    hribbon.add_panel(red_surface, CellLimit::default())?;
-    hribbon.add_panel(green_surface, CellLimit::default())?;
-    hribbon.add_panel(blue_surface, CellLimit::default())?;
-    vribbon.add_panel(hribbon, CellLimit::new(4., 100., None, None))?;
-    vribbon.add_panel(
-        button,
-        CellLimit::new(1., 50., Some(300.), Some(Vector2 { X: 0.5, Y: 0.8 })),
-    )?;
+    let hribbon = RibbonParams::builder()
+        .compositor(compositor.clone())
+        .orientation(RibbonOrientation::Horizontal)
+        .build()
+        .add_panel(red_surface, CellLimit::default())?
+        .add_panel(green_surface, CellLimit::default())?
+        .add_panel(blue_surface, CellLimit::default())?
+        .create()?;
+
+    let vribbon = RibbonParams::builder()
+        .compositor(compositor.clone())
+        .orientation(RibbonOrientation::Vertical)
+        .build()
+        .add_panel(hribbon, CellLimit::new(4., 100., None, None))?
+        .add_panel(
+            button,
+            CellLimit::new(1., 50., Some(300.), Some(Vector2 { X: 0.5, Y: 0.8 })),
+        )?
+        .create()?;
+
     let layer_stack = LayerStackParams::builder()
         .compositor(compositor.clone())
         .build()
-        .push_layer(vribbon)
+        .push_panel(vribbon)
         .create()?;
 
     let root_visual = compositor.CreateContainerVisual()?;

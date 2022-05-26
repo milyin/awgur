@@ -3,8 +3,8 @@ use std::sync::Arc;
 use super::{is_translated_point_in_box, EventSink, EventSource, Panel, PanelEvent};
 use async_object::{CArc, EArc, EventBox, EventStream};
 use async_trait::async_trait;
+use typed_builder::TypedBuilder;
 use windows::{
-    core::HSTRING,
     Foundation::Numerics::{Vector2, Vector3},
     UI::Composition::{Compositor, ContainerVisual},
 };
@@ -66,12 +66,19 @@ pub struct Cell {
 }
 
 impl Cell {
-    fn new(panel: impl Panel + 'static, container: ContainerVisual, limit: CellLimit) -> Self {
-        Self {
+    fn new(
+        panel: impl Panel + 'static,
+        compositor: &Compositor,
+        limit: CellLimit,
+    ) -> crate::Result<Self> {
+        let mut panel = panel;
+        let container = compositor.CreateContainerVisual()?;
+        panel.attach(container.clone())?;
+        Ok(Self {
             panel: Box::new(panel),
             container,
             limit,
-        }
+        })
     }
     fn translate_point(&self, mut point: Vector2) -> crate::Result<Vector2> {
         let offset = self.container.Offset()?;
@@ -129,25 +136,59 @@ pub struct Ribbon {
     events: EArc,
 }
 
+#[derive(TypedBuilder)]
+pub struct RibbonParams {
+    compositor: Compositor,
+    orientation: RibbonOrientation,
+    #[builder(default)]
+    cells: Vec<Cell>,
+}
+
+impl RibbonParams {
+    pub fn add_panel(self, panel: impl Panel + 'static, limit: CellLimit) -> crate::Result<Self> {
+        let mut this = self;
+        this.cells.push(Cell::new(panel, &this.compositor, limit)?);
+        Ok(this)
+    }
+    pub fn create(self) -> crate::Result<Ribbon> {
+        let ribbon_container = self.compositor.CreateContainerVisual()?;
+        for cell in &self.cells {
+            ribbon_container
+                .Children()?
+                .InsertAtTop(cell.container.clone())?;
+        }
+        // ribbon_container.SetComment(HSTRING::from("RIBBON_CONTAINER"))?;
+        let core = CArc::new(Core {
+            orientation: self.orientation,
+            cells: self.cells,
+            mouse_pos: None,
+        });
+        Ok(Ribbon {
+            compositor: self.compositor,
+            ribbon_container,
+            core,
+            events: EArc::new(),
+        })
+    }
+}
+
 impl Ribbon {
-    pub fn add_panel(
+    pub async fn add_panel(
         &mut self,
-        mut panel: impl Panel + 'static,
+        panel: impl Panel + 'static,
         limit: CellLimit,
     ) -> crate::Result<()> {
-        let container = self.compositor.CreateContainerVisual()?;
+        let cell = Cell::new(panel, &self.compositor, limit)?;
         self.ribbon_container
             .Children()?
-            .InsertAtTop(container.clone())?;
-        panel.attach(container.clone())?;
-        self.core
-            .call_mut(|v| v.cells.push(Cell::new(panel, container, limit)));
-        self.resize_cells(self.ribbon_container.Size()?)?;
+            .InsertAtTop(cell.container.clone())?;
+        self.core.async_call_mut(|v| v.cells.push(cell)).await;
+        self.resize_cells(self.ribbon_container.Size()?).await?;
         Ok(())
     }
-    fn resize_cells(&mut self, size: Vector2) -> crate::Result<()> {
+    async fn resize_cells(&mut self, size: Vector2) -> crate::Result<()> {
         self.ribbon_container.SetSize(size)?;
-        let (orientation, mut cells) = self.core.call(|v| (v.orientation(), v.cells()));
+        let (orientation, mut cells) = self.core.async_call(|v| (v.orientation(), v.cells())).await;
         if orientation == RibbonOrientation::Stack {
             for cell in &mut cells {
                 let content_size = size.clone() * cell.limit.content_ratio.clone();
@@ -247,22 +288,6 @@ impl EventSink<PanelEvent> for Ribbon {
 }
 
 impl Ribbon {
-    pub fn new(compositor: Compositor, orientation: RibbonOrientation) -> crate::Result<Self> {
-        let ribbon_container = compositor.CreateContainerVisual()?;
-        ribbon_container.SetComment(HSTRING::from("RIBBON_CONTAINER"))?;
-        let core = CArc::new(Core {
-            orientation,
-            cells: Vec::new(),
-            mouse_pos: None,
-        });
-        Ok(Self {
-            compositor,
-            ribbon_container,
-            core,
-            events: EArc::new(),
-        })
-    }
-
     async fn translate_panel_event_default(
         &mut self,
         event: PanelEvent,
@@ -281,7 +306,7 @@ impl Ribbon {
         size: Vector2,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
-        self.resize_cells(size)?;
+        self.resize_cells(size).await?;
         // TODO: run simultaneosuly
         let cells = self.core.async_call(|v| v.cells()).await;
         for mut cell in cells {

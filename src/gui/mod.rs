@@ -9,11 +9,13 @@ use std::sync::Arc;
 
 use async_object::{EventBox, EventStream};
 use async_trait::async_trait;
-pub use background::{Background, BackgroundBuilder, WBackground};
-pub use button::{Button, ButtonEvent, ButtonSkin, SimpleButtonSkin};
+pub use background::{Background, BackgroundParams, WBackground};
+pub use button::{
+    Button, ButtonEvent, ButtonParams, ButtonSkin, SimpleButtonSkin, SimpleButtonSkinParams,
+};
 pub use layer_stack::{LayerStack, LayerStackParams};
 pub use panel::{spawn_window_event_receiver, Panel, PanelEvent};
-pub use ribbon::{CellLimit, Ribbon, RibbonOrientation};
+pub use ribbon::{CellLimit, Ribbon, RibbonOrientation, RibbonParams};
 // pub use text::{Text, WText};
 
 use windows::Foundation::Numerics::Vector2;

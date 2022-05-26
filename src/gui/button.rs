@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use super::{
-    Background, BackgroundBuilder, EventSink, EventSource, LayerStack, LayerStackParams, Panel,
+    Background, BackgroundParams, EventSink, EventSource, LayerStack, LayerStackParams, Panel,
     PanelEvent,
 };
 use async_object::{CArc, EArc, EventBox, EventStream, WCArc};
 use async_trait::async_trait;
 use derive_weak::Weak;
+use typed_builder::TypedBuilder;
 use windows::UI::{
     Color, Colors,
     Composition::{Compositor, ContainerVisual},
@@ -32,6 +33,30 @@ pub struct Button {
     events: EArc,
 }
 
+#[derive(TypedBuilder)]
+pub struct ButtonParams {
+    compositor: Compositor,
+    #[builder(setter(transform = |skin: impl ButtonSkin + 'static | Box::new(skin) as Box<dyn ButtonSkin>))]
+    skin: Box<dyn ButtonSkin>,
+}
+
+impl ButtonParams {
+    pub fn create(self) -> crate::Result<Button> {
+        let container = self.compositor.CreateContainerVisual()?;
+        let mut skin = self.skin;
+        skin.attach(container.clone())?;
+        let core = CArc::new(Core {
+            skin,
+            pressed: false,
+        });
+        Ok(Button {
+            container,
+            core,
+            events: EArc::new(),
+        })
+    }
+}
+
 impl Core {
     fn press(&mut self) {
         self.pressed = true;
@@ -43,23 +68,6 @@ impl Core {
     }
     fn skin_panel(&self) -> Box<dyn Panel> {
         self.skin.clone_panel()
-    }
-}
-
-impl Button {
-    pub fn new(compositor: &Compositor, skin: impl ButtonSkin + 'static) -> crate::Result<Self> {
-        let container = compositor.CreateContainerVisual()?;
-        let mut skin = skin;
-        skin.attach(container.clone())?;
-        let core = CArc::new(Core {
-            skin: Box::new(skin),
-            pressed: false,
-        });
-        Ok(Button {
-            container,
-            core,
-            events: EArc::new(),
-        })
     }
 }
 
@@ -144,20 +152,27 @@ pub struct SimpleButtonSkin {
     events: EArc,
 }
 
-impl SimpleButtonSkin {
-    pub fn new(compositor: Compositor, color: Color) -> crate::Result<Self> {
-        let background = BackgroundBuilder::builder()
-            .color(color)
+#[derive(TypedBuilder)]
+pub struct SimpleButtonSkinParams {
+    compositor: Compositor,
+    color: Color,
+}
+
+impl SimpleButtonSkinParams {
+    pub fn create(self) -> crate::Result<SimpleButtonSkin> {
+        let background = BackgroundParams::builder()
+            .color(self.color)
             .round_corners(true)
+            .compositor(self.compositor.clone())
             .build()
-            .new(compositor.clone())?;
+            .create()?;
         let layer_stack = LayerStackParams::builder()
-            .compositor(compositor)
+            .compositor(self.compositor)
             .build()
-            .push_layer(background.clone())
+            .push_panel(background.clone())
             .create()?;
         let earc = EArc::new();
-        Ok(Self {
+        Ok(SimpleButtonSkin {
             layer_stack,
             background,
             events: earc,
