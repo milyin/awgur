@@ -2,8 +2,9 @@ use futures::{executor::ThreadPool, StreamExt};
 use wag::{
     async_handle_err,
     gui::{
-        Background, Button, ButtonEvent, CellLimit, DefaultButtonSkin, EventSource, LayerStack,
-        Ribbon, RibbonOrientation, Root, WBackground,
+        spawn_window_event_receiver, BackgroundParams, Button, ButtonEvent, ButtonParams,
+        CellLimit, EventSource, LayerStackParams, RibbonOrientation, RibbonParams,
+        SimpleButtonSkinParams, WBackground,
     },
     window::{
         initialize_window_thread,
@@ -25,30 +26,51 @@ fn main() -> wag::Result<()> {
     // let composition_graphics_device =
     //     CanvasComposition::CreateCompositionGraphicsDevice(&compositor, &canvas_device)?;
 
-    let mut root = Root::new(&pool, &compositor, Vector2 { X: 800., Y: 600. })?;
-    let mut layer_stack = LayerStack::new(compositor.clone())?;
-    let mut vribbon = Ribbon::new(compositor.clone(), RibbonOrientation::Vertical)?;
-    let mut hribbon = Ribbon::new(compositor.clone(), RibbonOrientation::Horizontal)?;
+    let button_skin = SimpleButtonSkinParams::builder()
+        .compositor(compositor.clone())
+        .color(Colors::Magenta()?)
+        .build()
+        .create()?;
+    let button = ButtonParams::builder()
+        .skin(button_skin)
+        .compositor(compositor.clone())
+        .build()
+        .create()?;
 
-    let button_skin = DefaultButtonSkin::new(compositor.clone())?;
-    let button = Button::new(&compositor, button_skin)?;
-
-    let red_surface = Background::new(compositor.clone(), Colors::Red()?, true)?;
-    let green_surface = Background::new(compositor.clone(), Colors::Green()?, true)?;
-    let blue_surface = Background::new(compositor.clone(), Colors::Blue()?, true)?;
+    let red_surface = BackgroundParams::builder()
+        .compositor(compositor.clone())
+        .color(Colors::Red()?)
+        .round_corners(true)
+        .build()
+        .create()?;
+    let green_surface = BackgroundParams::builder()
+        .compositor(compositor.clone())
+        .color(Colors::Green()?)
+        .round_corners(true)
+        .build()
+        .create()?;
+    let blue_surface = BackgroundParams::builder()
+        .compositor(compositor.clone())
+        .color(Colors::Blue()?)
+        .round_corners(true)
+        .build()
+        .create()?;
 
     async fn rotate_background_colors(
         a: &mut WBackground,
         b: &mut WBackground,
         c: &mut WBackground,
     ) -> wag::Result<()> {
-        let ca = a.async_color().await;
-        let cb = b.async_color().await;
-        let cc = c.async_color().await;
-        if let (Some(ca), Some(cb), Some(cc)) = (ca, cb, cc) {
-            let _ = a.async_set_color(cb).await?;
-            let _ = b.async_set_color(cc).await?;
-            let _ = c.async_set_color(ca).await?;
+        let a = a.upgrade();
+        let b = b.upgrade();
+        let c = c.upgrade();
+        if let (Some(mut a), Some(mut b), Some(mut c)) = (a, b, c) {
+            let ca = a.color().await;
+            let cb = b.color().await;
+            let cc = c.color().await;
+            a.set_color(cb).await?;
+            b.set_color(cc).await?;
+            c.set_color(ca).await?;
         }
         Ok(())
     }
@@ -72,26 +94,36 @@ fn main() -> wag::Result<()> {
         }
     }));
 
-    // let window = Window::new(
-    //     &compositor,
-    //     "demo",
-    //     800,
-    //     600,
-    //     root.visual(),
-    //     root.tx_event_channel(),
-    // )?;
-    hribbon.add_panel(red_surface, CellLimit::default())?;
-    hribbon.add_panel(green_surface, CellLimit::default())?;
-    hribbon.add_panel(blue_surface, CellLimit::default())?;
-    vribbon.add_panel(hribbon, CellLimit::new(4., 100., None, None))?;
-    vribbon.add_panel(
-        button,
-        CellLimit::new(1., 50., Some(300.), Some(Vector2 { X: 0.5, Y: 0.8 })),
-    )?;
-    layer_stack.push_panel(vribbon)?;
-    root.set_panel(layer_stack)?;
+    let hribbon = RibbonParams::builder()
+        .compositor(compositor.clone())
+        .orientation(RibbonOrientation::Horizontal)
+        .build()
+        .add_panel(red_surface, CellLimit::default())?
+        .add_panel(green_surface, CellLimit::default())?
+        .add_panel(blue_surface, CellLimit::default())?
+        .create()?;
 
-    let window = Window::new(compositor, "demo", root.visual(), root.tx_event_channel());
+    let vribbon = RibbonParams::builder()
+        .compositor(compositor.clone())
+        .orientation(RibbonOrientation::Vertical)
+        .build()
+        .add_panel(hribbon, CellLimit::new(4., 100., None, None))?
+        .add_panel(
+            button,
+            CellLimit::new(1., 50., Some(300.), Some(Vector2 { X: 0.5, Y: 0.8 })),
+        )?
+        .create()?;
+
+    let layer_stack = LayerStackParams::builder()
+        .compositor(compositor.clone())
+        .build()
+        .push_panel(vribbon)
+        .create()?;
+
+    let root_visual = compositor.CreateContainerVisual()?;
+    root_visual.SetSize(Vector2 { X: 800., Y: 600. })?;
+    let channel = spawn_window_event_receiver(&pool, layer_stack, root_visual.clone())?;
+    let window = Window::new(compositor, "demo", root_visual, channel);
     let _window = window.open()?;
     run_message_loop();
 
