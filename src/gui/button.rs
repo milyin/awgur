@@ -4,7 +4,7 @@ use super::{
     Background, BackgroundParams, EventSink, EventSource, LayerStack, LayerStackParams, Panel,
     PanelEvent,
 };
-use async_object::{CArc, EArc, EventBox, EventStream, WCArc};
+use async_object::{CArc, EArc, EventBox, EventStream};
 use async_trait::async_trait;
 use derive_weak::Weak;
 use typed_builder::TypedBuilder;
@@ -28,7 +28,6 @@ struct Core {
 #[derive(Clone, Weak)]
 pub struct Button {
     container: ContainerVisual,
-    #[weak(WCArc)]
     core: CArc<Core>,
     events: EArc,
 }

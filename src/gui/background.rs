@@ -1,4 +1,4 @@
-use async_object::{CArc, EArc, EventBox, EventStream, WCArc, WEArc};
+use async_object::{CArc, EArc, EventBox, EventStream};
 use async_trait::async_trait;
 use derive_weak::Weak;
 use float_ord::FloatOrd;
@@ -76,9 +76,7 @@ impl Core {
 #[derive(Clone, Weak)]
 pub struct Background {
     container: ContainerVisual,
-    #[weak(WCArc)]
     core: CArc<Core>,
-    #[weak(WEArc)]
     events: EArc,
 }
 

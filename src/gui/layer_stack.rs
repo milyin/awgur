@@ -4,6 +4,7 @@ use super::{EventSink, EventSource, Panel, PanelEvent};
 use async_object::{CArc, EArc, EventBox, EventStream};
 use async_trait::async_trait;
 
+use derive_weak::Weak;
 use typed_builder::TypedBuilder;
 use windows::UI::Composition::{Compositor, ContainerVisual};
 
@@ -11,7 +12,7 @@ struct Core {
     layers: Vec<Box<dyn Panel>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Weak)]
 pub struct LayerStack {
     container: ContainerVisual,
     core: CArc<Core>,

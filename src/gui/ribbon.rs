@@ -3,6 +3,7 @@ use std::sync::Arc;
 use super::{is_translated_point_in_box, EventSink, EventSource, Panel, PanelEvent};
 use async_object::{CArc, EArc, EventBox, EventStream};
 use async_trait::async_trait;
+use derive_weak::Weak;
 use typed_builder::TypedBuilder;
 use windows::{
     Foundation::Numerics::{Vector2, Vector3},
@@ -128,7 +129,7 @@ impl Core {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Weak)]
 pub struct Ribbon {
     compositor: Compositor,
     ribbon_container: ContainerVisual,
