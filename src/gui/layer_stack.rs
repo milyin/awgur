@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use async_std::sync::{Arc, RwLock};
 
 use super::{EventSink, EventSource, Panel, PanelEvent};
-use async_object::{CArc, EArc, EventBox, EventStream};
+use async_object::{EArc, EventBox, EventStream};
 use async_trait::async_trait;
 
 use derive_weak::Weak;
@@ -15,35 +15,27 @@ struct Core {
 #[derive(Clone, Weak)]
 pub struct LayerStack {
     container: ContainerVisual,
-    core: CArc<Core>,
+    core: Arc<RwLock<Core>>,
     events: EArc,
 }
 
 impl LayerStack {
     async fn layers(&self) -> Vec<Box<dyn Panel>> {
-        self.core.async_call(|v| v.layers.clone()).await
+        self.core.read().await.layers.clone()
     }
 
     pub async fn push_panel(&mut self, mut panel: impl Panel + 'static) -> crate::Result<()> {
         panel.attach(self.container.clone())?;
-        self.core
-            .async_call_mut(|v| {
-                v.layers.push(Box::new(panel));
-            })
-            .await;
+        self.core.write().await.layers.push(Box::new(panel));
         Ok(())
     }
 
     pub async fn remove_panel(&mut self, mut panel: impl Panel) -> crate::Result<()> {
-        self.core
-            .async_call_mut(|v| {
-                if let Some(index) = v.layers.iter().position(|v| *v == panel) {
-                    panel.detach()?;
-                    v.layers.remove(index);
-                }
-                crate::Result::Ok(())
-            })
-            .await?;
+        let mut core = self.core.write().await;
+        if let Some(index) = core.layers.iter().position(|v| *v == panel) {
+            panel.detach()?;
+            core.layers.remove(index);
+        }
         Ok(())
     }
     async fn translate_event_to_all_layers(
@@ -117,7 +109,7 @@ impl LayerStackParams {
         for layer in &mut layers {
             layer.attach(container.clone())?;
         }
-        let core = CArc::new(Core { layers });
+        let core = Arc::new(RwLock::new(Core { layers }));
         // container.SetComment(HSTRING::from("LAYER_STACK"))?;
         Ok(LayerStack {
             container,
@@ -129,7 +121,7 @@ impl LayerStackParams {
 
 impl Panel for LayerStack {
     fn id(&self) -> usize {
-        self.core.id()
+        Arc::as_ptr(&self.core) as usize
     }
     fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
         container.Children()?.InsertAtTop(self.container.clone())?;

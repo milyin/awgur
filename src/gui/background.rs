@@ -1,8 +1,8 @@
-use async_object::{CArc, EArc, EventBox, EventStream};
+use async_object::{EArc, EventBox, EventStream};
+use async_std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use derive_weak::Weak;
 use float_ord::FloatOrd;
-use std::sync::Arc;
 use typed_builder::TypedBuilder;
 use windows::{
     Foundation::Numerics::Vector2,
@@ -76,7 +76,7 @@ impl Core {
 #[derive(Clone, Weak)]
 pub struct Background {
     container: ContainerVisual,
-    core: CArc<Core>,
+    core: Arc<RwLock<Core>>,
     events: EArc,
 }
 
@@ -90,12 +90,12 @@ pub struct BackgroundParams {
 impl BackgroundParams {
     pub fn create(self) -> crate::Result<Background> {
         let container = self.compositor.CreateShapeVisual()?;
-        let core = CArc::new(Core {
+        let core = Arc::new(RwLock::new(Core {
             round_corners: self.round_corners,
             color: self.color,
             compositor: self.compositor,
             container: container.clone(),
-        });
+        }));
         Ok(Background {
             container: container.into(),
             core,
@@ -106,10 +106,10 @@ impl BackgroundParams {
 
 impl Background {
     pub async fn color(&self) -> Color {
-        self.core.async_call(|v| v.color).await
+        self.core.read().await.color
     }
     pub async fn set_color(&mut self, color: Color) -> crate::Result<()> {
-        self.core.async_call_mut(|v| v.set_color(color)).await?;
+        self.core.write().await.set_color(color)?;
         Ok(())
     }
 }
@@ -117,7 +117,7 @@ impl Background {
 #[async_trait]
 impl Panel for Background {
     fn id(&self) -> usize {
-        self.core.id()
+        Arc::as_ptr(&self.core) as usize
     }
     fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
         container.Children()?.InsertAtTop(self.container.clone())?;
@@ -148,7 +148,7 @@ impl EventSink<PanelEvent> for Background {
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         if let PanelEvent::Resized(size) = &event {
-            self.core.async_call_mut(|v| v.resize(*size)).await?;
+            self.core.write().await.resize(*size)?;
         }
         self.events.send_event(event, source).await;
         Ok(())

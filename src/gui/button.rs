@@ -1,10 +1,10 @@
-use std::sync::Arc;
-
 use super::{
     Background, BackgroundParams, EventSink, EventSource, LayerStack, LayerStackParams, Panel,
     PanelEvent,
 };
-use async_object::{CArc, EArc, EventBox, EventStream};
+use async_object::{EArc, EventBox, EventStream};
+use async_std::sync::Arc;
+use async_std::sync::RwLock;
 use async_trait::async_trait;
 use derive_weak::Weak;
 use typed_builder::TypedBuilder;
@@ -28,7 +28,7 @@ struct Core {
 #[derive(Clone, Weak)]
 pub struct Button {
     container: ContainerVisual,
-    core: CArc<Core>,
+    core: Arc<RwLock<Core>>,
     events: EArc,
 }
 
@@ -44,10 +44,10 @@ impl ButtonParams {
         let container = self.compositor.CreateContainerVisual()?;
         let mut skin = self.skin;
         skin.attach(container.clone())?;
-        let core = CArc::new(Core {
+        let core = Arc::new(RwLock::new(Core {
             skin,
             pressed: false,
-        });
+        }));
         Ok(Button {
             container,
             core,
@@ -89,7 +89,7 @@ impl EventSink<PanelEvent> for Button {
         event: PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
-        let mut skin = self.core.async_call(|v| v.skin_panel()).await;
+        let mut skin = self.core.read().await.skin_panel();
         skin.on_event(event.clone(), source.clone()).await?;
         self.events.send_event(event.clone(), source.clone()).await;
 
@@ -102,11 +102,11 @@ impl EventSink<PanelEvent> for Button {
                 if button == MouseButton::Left {
                     if state == ElementState::Pressed {
                         if in_slot {
-                            self.core.async_call_mut(|v| v.press()).await;
+                            self.core.write().await.press();
                             self.events.send_event(ButtonEvent::Press, source).await;
                         }
                     } else if state == ElementState::Released {
-                        let released = self.core.async_call_mut(|v| v.release()).await;
+                        let released = self.core.write().await.release();
                         if released {
                             self.events
                                 .send_event(ButtonEvent::Release(in_slot), source)
@@ -123,7 +123,7 @@ impl EventSink<PanelEvent> for Button {
 
 impl Panel for Button {
     fn id(&self) -> usize {
-        self.core.id()
+        Arc::as_ptr(&self.core) as usize
     }
 
     fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
