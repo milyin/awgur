@@ -1,5 +1,10 @@
-use std::hash::{Hash, Hasher};
+use std::{
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
+use async_events::{EventBox, EventStream};
+use async_trait::async_trait;
 use futures::{
     channel::mpsc::{channel, Sender},
     task::{Spawn, SpawnExt},
@@ -42,27 +47,56 @@ impl From<WindowEvent<'static>> for PanelEvent {
 }
 
 pub trait Panel: Send + Sync + EventSource<PanelEvent> + EventSink<PanelEvent> {
-    fn id(&self) -> usize;
-    fn attach(&mut self, container: ContainerVisual) -> crate::Result<()>;
-    fn detach(&mut self) -> crate::Result<()>;
-    fn clone_panel(&self) -> Box<dyn Panel>;
+    fn attach(&self, container: ContainerVisual) -> crate::Result<()>;
+    fn detach(&self) -> crate::Result<()>;
 }
 
-impl Clone for Box<dyn Panel> {
-    fn clone(&self) -> Self {
-        self.clone_panel()
+pub trait ArcPanel: Panel {
+    fn id(&self) -> usize;
+    fn clone_box(&self) -> Box<dyn ArcPanel>;
+}
+
+impl<EVT: Send + Sync + 'static, T: EventSource<EVT>> EventSource<EVT> for Arc<T> {
+    fn event_stream(&self) -> EventStream<EVT> {
+        self.as_ref().event_stream()
     }
 }
 
-impl Hash for Box<dyn Panel> {
+#[async_trait]
+impl<EVT: Send + Sync + 'static, T: EventSink<EVT> + Send + Sync> EventSink<EVT> for Arc<T> {
+    async fn on_event(&self, event: EVT, source: Option<Arc<EventBox>>) -> crate::Result<()> {
+        self.as_ref().on_event(event, source).await
+    }
+}
+
+impl<T: Panel> Panel for Arc<T> {
+    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
+        self.as_ref().attach(container)
+    }
+
+    fn detach(&self) -> crate::Result<()> {
+        self.as_ref().detach()
+    }
+}
+
+impl<T: Panel + 'static> ArcPanel for Arc<T> {
+    fn id(&self) -> usize {
+        Arc::as_ptr(&self) as usize
+    }
+    fn clone_box(&self) -> Box<dyn ArcPanel> {
+        Box::new(self.clone())
+    }
+}
+
+impl Hash for dyn ArcPanel {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.id().hash(state)
     }
 }
 
-impl<T: Panel> PartialEq<T> for Box<dyn Panel> {
-    fn eq(&self, other: &T) -> bool {
-        self.id() == other.id()
+impl Clone for Box<dyn ArcPanel> {
+    fn clone(&self) -> Self {
+        self.clone_box()
     }
 }
 
@@ -72,7 +106,7 @@ pub fn spawn_window_event_receiver(
     container: ContainerVisual,
 ) -> crate::Result<Sender<WindowEvent<'static>>> {
     let (tx_event_channel, mut rx_event_channel) = channel::<WindowEvent<'static>>(1024 * 64);
-    let mut panel = panel;
+    let panel = panel;
     panel.attach(container.clone())?;
     pool.spawn(async_handle_err(async move {
         while let Some(event) = rx_event_channel.next().await {

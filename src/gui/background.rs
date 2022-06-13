@@ -1,7 +1,6 @@
 use async_events::{EventBox, EventQueues, EventStream};
 use async_std::sync::{Arc, RwLock};
 use async_trait::async_trait;
-use derive_weak::Weak;
 use float_ord::FloatOrd;
 use typed_builder::TypedBuilder;
 use windows::{
@@ -73,11 +72,10 @@ impl Core {
     }
 }
 
-#[derive(Clone, Weak)]
 pub struct Background {
     container: ContainerVisual,
-    core: Arc<RwLock<Core>>,
-    events: Arc<EventQueues>,
+    core: RwLock<Core>,
+    events: EventQueues,
 }
 
 #[derive(TypedBuilder)]
@@ -88,19 +86,19 @@ pub struct BackgroundParams {
 }
 
 impl BackgroundParams {
-    pub fn create(self) -> crate::Result<Background> {
+    pub fn create(self) -> crate::Result<Arc<Background>> {
         let container = self.compositor.CreateShapeVisual()?;
-        let core = Arc::new(RwLock::new(Core {
+        let core = RwLock::new(Core {
             round_corners: self.round_corners,
             color: self.color,
             compositor: self.compositor,
             container: container.clone(),
-        }));
-        Ok(Background {
+        });
+        Ok(Arc::new(Background {
             container: container.into(),
             core,
-            events: Arc::new(EventQueues::new()),
-        })
+            events: EventQueues::new(),
+        }))
     }
 }
 
@@ -108,7 +106,7 @@ impl Background {
     pub async fn color(&self) -> Color {
         self.core.read().await.color
     }
-    pub async fn set_color(&mut self, color: Color) -> crate::Result<()> {
+    pub async fn set_color(&self, color: Color) -> crate::Result<()> {
         self.core.write().await.set_color(color)?;
         Ok(())
     }
@@ -116,21 +114,15 @@ impl Background {
 
 #[async_trait]
 impl Panel for Background {
-    fn id(&self) -> usize {
-        Arc::as_ptr(&self.core) as usize
-    }
-    fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
+    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
         container.Children()?.InsertAtTop(self.container.clone())?;
         Ok(())
     }
-    fn detach(&mut self) -> crate::Result<()> {
+    fn detach(&self) -> crate::Result<()> {
         if let Ok(parent) = self.container.Parent() {
             parent.Children()?.Remove(&self.container)?;
         }
         Ok(())
-    }
-    fn clone_panel(&self) -> Box<(dyn Panel + 'static)> {
-        Box::new(self.clone())
     }
 }
 
@@ -143,7 +135,7 @@ impl EventSource<PanelEvent> for Background {
 #[async_trait]
 impl EventSink<PanelEvent> for Background {
     async fn on_event(
-        &mut self,
+        &self,
         event: PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {

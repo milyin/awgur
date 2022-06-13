@@ -1,3 +1,4 @@
+use super::ArcPanel;
 use super::{
     Background, BackgroundParams, EventSink, EventSource, LayerStack, LayerStackParams, Panel,
     PanelEvent,
@@ -42,7 +43,7 @@ pub struct ButtonParams {
 impl ButtonParams {
     pub fn create(self) -> crate::Result<Button> {
         let container = self.compositor.CreateContainerVisual()?;
-        let mut skin = self.skin;
+        let skin = self.skin;
         skin.attach(container.clone())?;
         let core = Arc::new(RwLock::new(Core {
             skin,
@@ -65,8 +66,8 @@ impl Core {
         self.pressed = false;
         pressed
     }
-    fn skin_panel(&self) -> Box<dyn Panel> {
-        self.skin.clone_panel()
+    fn skin_panel(&self) -> Box<dyn ArcPanel> {
+        self.skin.clone_box()
     }
 }
 
@@ -85,11 +86,11 @@ impl EventSource<PanelEvent> for Button {
 #[async_trait]
 impl EventSink<PanelEvent> for Button {
     async fn on_event(
-        &mut self,
+        &self,
         event: PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
-        let mut skin = self.core.read().await.skin_panel();
+        let skin = self.core.read().await.skin_panel();
         skin.on_event(event.clone(), source.clone()).await?;
         self.events.send_event(event.clone(), source.clone()).await;
 
@@ -122,32 +123,24 @@ impl EventSink<PanelEvent> for Button {
 }
 
 impl Panel for Button {
-    fn id(&self) -> usize {
-        Arc::as_ptr(&self.core) as usize
-    }
-
-    fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
+    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
         container.Children()?.InsertAtTop(self.container.clone())?;
         Ok(())
     }
-    fn detach(&mut self) -> crate::Result<()> {
+    fn detach(&self) -> crate::Result<()> {
         if let Ok(parent) = self.container.Parent() {
             parent.Children()?.Remove(&self.container)?;
         }
         Ok(())
     }
-
-    fn clone_panel(&self) -> Box<dyn Panel> {
-        Box::new(self.clone())
-    }
 }
 
-pub trait ButtonSkin: Panel + EventSink<ButtonEvent> {}
+pub trait ButtonSkin: ArcPanel + EventSink<ButtonEvent> {}
 
 #[derive(Clone)]
 pub struct SimpleButtonSkin {
     layer_stack: LayerStack,
-    background: Background,
+    background: Arc<Background>,
     events: Arc<EventQueues>,
 }
 
@@ -181,11 +174,7 @@ impl SimpleButtonSkinParams {
 
 #[async_trait]
 impl EventSink<ButtonEvent> for SimpleButtonSkin {
-    async fn on_event(
-        &mut self,
-        event: ButtonEvent,
-        _: Option<Arc<EventBox>>,
-    ) -> crate::Result<()> {
+    async fn on_event(&self, event: ButtonEvent, _: Option<Arc<EventBox>>) -> crate::Result<()> {
         match event {
             ButtonEvent::Press => self.background.set_color(Colors::DarkMagenta()?).await?,
             ButtonEvent::Release(_) => self.background.set_color(Colors::Magenta()?).await?,
@@ -197,7 +186,7 @@ impl EventSink<ButtonEvent> for SimpleButtonSkin {
 #[async_trait]
 impl EventSink<PanelEvent> for SimpleButtonSkin {
     async fn on_event(
-        &mut self,
+        &self,
         event: PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
@@ -212,21 +201,13 @@ impl EventSource<PanelEvent> for SimpleButtonSkin {
 }
 
 impl Panel for SimpleButtonSkin {
-    fn id(&self) -> usize {
-        Arc::as_ptr(&self.events) as usize
-    }
-
-    fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
+    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
         self.layer_stack.attach(container)
     }
 
-    fn detach(&mut self) -> crate::Result<()> {
+    fn detach(&self) -> crate::Result<()> {
         self.layer_stack.detach()
-    }
-
-    fn clone_panel(&self) -> Box<dyn Panel> {
-        Box::new(self.clone())
     }
 }
 
-impl ButtonSkin for SimpleButtonSkin {}
+impl ButtonSkin for Arc<SimpleButtonSkin> {}
