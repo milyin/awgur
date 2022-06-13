@@ -1,4 +1,4 @@
-use async_object::{EArc, EventBox, EventStream};
+use async_events::{EventBox, EventQueues, EventStream};
 use async_std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use derive_weak::Weak;
@@ -77,7 +77,7 @@ impl Core {
 pub struct Background {
     container: ContainerVisual,
     core: Arc<RwLock<Core>>,
-    events: EArc,
+    events: Arc<EventQueues>,
 }
 
 #[derive(TypedBuilder)]
@@ -99,7 +99,7 @@ impl BackgroundParams {
         Ok(Background {
             container: container.into(),
             core,
-            events: EArc::new(),
+            events: Arc::new(EventQueues::new()),
         })
     }
 }

@@ -2,7 +2,7 @@ use super::{
     Background, BackgroundParams, EventSink, EventSource, LayerStack, LayerStackParams, Panel,
     PanelEvent,
 };
-use async_object::{EArc, EventBox, EventStream};
+use async_events::{EventBox, EventQueues, EventStream};
 use async_std::sync::Arc;
 use async_std::sync::RwLock;
 use async_trait::async_trait;
@@ -29,7 +29,7 @@ struct Core {
 pub struct Button {
     container: ContainerVisual,
     core: Arc<RwLock<Core>>,
-    events: EArc,
+    events: Arc<EventQueues>,
 }
 
 #[derive(TypedBuilder)]
@@ -51,7 +51,7 @@ impl ButtonParams {
         Ok(Button {
             container,
             core,
-            events: EArc::new(),
+            events: Arc::new(EventQueues::new()),
         })
     }
 }
@@ -148,7 +148,7 @@ pub trait ButtonSkin: Panel + EventSink<ButtonEvent> {}
 pub struct SimpleButtonSkin {
     layer_stack: LayerStack,
     background: Background,
-    events: EArc,
+    events: Arc<EventQueues>,
 }
 
 #[derive(TypedBuilder)]
@@ -170,7 +170,7 @@ impl SimpleButtonSkinParams {
             .build()
             .push_panel(background.clone())
             .create()?;
-        let earc = EArc::new();
+        let earc = Arc::new(EventQueues::new());
         Ok(SimpleButtonSkin {
             layer_stack,
             background,
@@ -207,13 +207,13 @@ impl EventSink<PanelEvent> for SimpleButtonSkin {
 
 impl EventSource<PanelEvent> for SimpleButtonSkin {
     fn event_stream(&self) -> EventStream<PanelEvent> {
-        EventStream::new(&self.events)
+        self.events.create_event_stream()
     }
 }
 
 impl Panel for SimpleButtonSkin {
     fn id(&self) -> usize {
-        self.events.id()
+        Arc::as_ptr(&self.events) as usize
     }
 
     fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {

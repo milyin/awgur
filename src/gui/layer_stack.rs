@@ -1,7 +1,7 @@
 use async_std::sync::{Arc, RwLock};
 
 use super::{EventSink, EventSource, Panel, PanelEvent};
-use async_object::{EArc, EventBox, EventStream};
+use async_events::{EventBox, EventQueues, EventStream};
 use async_trait::async_trait;
 
 use derive_weak::Weak;
@@ -16,7 +16,7 @@ struct Core {
 pub struct LayerStack {
     container: ContainerVisual,
     core: Arc<RwLock<Core>>,
-    events: EArc,
+    events: Arc<EventQueues>,
 }
 
 impl LayerStack {
@@ -114,7 +114,7 @@ impl LayerStackParams {
         Ok(LayerStack {
             container,
             core,
-            events: EArc::new(),
+            events: Arc::new(EventQueues::new()),
         })
     }
 }

@@ -1,5 +1,5 @@
 use super::{is_translated_point_in_box, EventSink, EventSource, Panel, PanelEvent};
-use async_object::{EArc, EventBox, EventStream};
+use async_events::{EventBox, EventQueues, EventStream};
 use async_std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use derive_weak::Weak;
@@ -133,7 +133,7 @@ pub struct Ribbon {
     compositor: Compositor,
     ribbon_container: ContainerVisual,
     core: Arc<RwLock<Core>>,
-    events: EArc,
+    events: Arc<EventQueues>,
 }
 
 #[derive(TypedBuilder)]
@@ -167,7 +167,7 @@ impl RibbonParams {
             compositor: self.compositor,
             ribbon_container,
             core,
-            events: EArc::new(),
+            events: Arc::new(EventQueues::new()),
         })
     }
 }

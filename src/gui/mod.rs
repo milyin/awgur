@@ -7,7 +7,7 @@ mod ribbon;
 
 use std::sync::Arc;
 
-use async_object::{EventBox, EventStream};
+use async_events::{EventBox, EventStream};
 use async_trait::async_trait;
 pub use background::{Background, BackgroundParams, WBackground};
 pub use button::{
