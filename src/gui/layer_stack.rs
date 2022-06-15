@@ -4,7 +4,6 @@ use super::{ArcPanel, EventSink, EventSource, Panel, PanelEvent};
 use async_events::{EventBox, EventQueues, EventStream};
 use async_trait::async_trait;
 
-use derive_weak::Weak;
 use typed_builder::TypedBuilder;
 use windows::UI::Composition::{Compositor, ContainerVisual};
 
@@ -12,11 +11,10 @@ struct Core {
     layers: Vec<Box<dyn ArcPanel>>,
 }
 
-#[derive(Clone, Weak)]
 pub struct LayerStack {
     container: ContainerVisual,
-    core: Arc<RwLock<Core>>,
-    events: Arc<EventQueues>,
+    core: RwLock<Core>,
+    events: EventQueues,
 }
 
 impl LayerStack {
@@ -109,12 +107,12 @@ impl LayerStackParams {
         for layer in &mut layers {
             layer.attach(container.clone())?;
         }
-        let core = Arc::new(RwLock::new(Core { layers }));
+        let core = RwLock::new(Core { layers });
         // container.SetComment(HSTRING::from("LAYER_STACK"))?;
         Ok(LayerStack {
             container,
             core,
-            events: Arc::new(EventQueues::new()),
+            events: EventQueues::new(),
         })
     }
 }

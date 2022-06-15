@@ -7,7 +7,6 @@ use async_events::{EventBox, EventQueues, EventStream};
 use async_std::sync::Arc;
 use async_std::sync::RwLock;
 use async_trait::async_trait;
-use derive_weak::Weak;
 use typed_builder::TypedBuilder;
 use windows::UI::{
     Color, Colors,
@@ -26,11 +25,10 @@ struct Core {
     pressed: bool,
 }
 
-#[derive(Clone, Weak)]
 pub struct Button {
     container: ContainerVisual,
-    core: Arc<RwLock<Core>>,
-    events: Arc<EventQueues>,
+    core: RwLock<Core>,
+    events: EventQueues,
 }
 
 #[derive(TypedBuilder)]
@@ -41,19 +39,19 @@ pub struct ButtonParams {
 }
 
 impl ButtonParams {
-    pub fn create(self) -> crate::Result<Button> {
+    pub fn create(self) -> crate::Result<Arc<Button>> {
         let container = self.compositor.CreateContainerVisual()?;
         let skin = self.skin;
         skin.attach(container.clone())?;
-        let core = Arc::new(RwLock::new(Core {
+        let core = RwLock::new(Core {
             skin,
             pressed: false,
-        }));
-        Ok(Button {
+        });
+        Ok(Arc::new(Button {
             container,
             core,
-            events: Arc::new(EventQueues::new()),
-        })
+            events: EventQueues::new(),
+        }))
     }
 }
 
@@ -137,11 +135,10 @@ impl Panel for Button {
 
 pub trait ButtonSkin: ArcPanel + EventSink<ButtonEvent> {}
 
-#[derive(Clone)]
 pub struct SimpleButtonSkin {
     layer_stack: LayerStack,
     background: Arc<Background>,
-    events: Arc<EventQueues>,
+    events: EventQueues,
 }
 
 #[derive(TypedBuilder)]
@@ -151,7 +148,7 @@ pub struct SimpleButtonSkinParams {
 }
 
 impl SimpleButtonSkinParams {
-    pub fn create(self) -> crate::Result<SimpleButtonSkin> {
+    pub fn create(self) -> crate::Result<Arc<SimpleButtonSkin>> {
         let background = BackgroundParams::builder()
             .color(self.color)
             .round_corners(true)
@@ -163,12 +160,12 @@ impl SimpleButtonSkinParams {
             .build()
             .push_panel(background.clone())
             .create()?;
-        let earc = Arc::new(EventQueues::new());
-        Ok(SimpleButtonSkin {
+        let events = EventQueues::new();
+        Ok(Arc::new(SimpleButtonSkin {
             layer_stack,
             background,
-            events: earc,
-        })
+            events,
+        }))
     }
 }
 

@@ -1,10 +1,12 @@
+use std::sync::{Arc, Weak};
+
 use futures::{executor::ThreadPool, StreamExt};
 use wag::{
     async_handle_err,
     gui::{
-        spawn_window_event_receiver, BackgroundParams, ButtonEvent, ButtonParams, CellLimit,
-        EventSource, LayerStackParams, RibbonOrientation, RibbonParams, SimpleButtonSkinParams,
-        WBackground,
+        spawn_window_event_receiver, Background, BackgroundParams, ButtonEvent, ButtonParams,
+        CellLimit, EventSource, LayerStackParams, RibbonOrientation, RibbonParams,
+        SimpleButtonSkinParams,
     },
     window::{
         initialize_window_thread,
@@ -57,14 +59,14 @@ fn main() -> wag::Result<()> {
         .create()?;
 
     async fn rotate_background_colors(
-        a: &mut WBackground,
-        b: &mut WBackground,
-        c: &mut WBackground,
+        a: &Weak<Background>,
+        b: &Weak<Background>,
+        c: &Weak<Background>,
     ) -> wag::Result<()> {
         let a = a.upgrade();
         let b = b.upgrade();
         let c = c.upgrade();
-        if let (Some(mut a), Some(mut b), Some(mut c)) = (a, b, c) {
+        if let (Some(a), Some(b), Some(c)) = (a, b, c) {
             let ca = a.color().await;
             let cb = b.color().await;
             let cc = c.color().await;
@@ -76,9 +78,9 @@ fn main() -> wag::Result<()> {
     }
 
     pool.spawn_ok(async_handle_err({
-        let mut a = red_surface.downgrade();
-        let mut b = green_surface.downgrade();
-        let mut c = blue_surface.downgrade();
+        let a = Arc::downgrade(&red_surface);
+        let b = Arc::downgrade(&green_surface);
+        let c = Arc::downgrade(&blue_surface);
         let mut stream = button.event_stream();
         async move {
             // while let Some(event) = stream.next().await {
@@ -87,7 +89,7 @@ fn main() -> wag::Result<()> {
             //     }
             while let Some(event) = stream.next().await {
                 if ButtonEvent::Release(true) == *event.as_ref() {
-                    rotate_background_colors(&mut a, &mut b, &mut c).await?;
+                    rotate_background_colors(&a, &b, &c).await?;
                 }
             }
             Ok(())

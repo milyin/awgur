@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 async_events = { path = "../async-events" }
-derive_weak = "0.1.0"
 futures = "0.3.17"
 thiserror = "1.0"
 float-ord = "0.3.2"

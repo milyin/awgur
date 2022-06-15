@@ -2,7 +2,6 @@ use super::{is_translated_point_in_box, ArcPanel, EventSink, EventSource, Panel,
 use async_events::{EventBox, EventQueues, EventStream};
 use async_std::sync::{Arc, RwLock};
 use async_trait::async_trait;
-use derive_weak::Weak;
 use typed_builder::TypedBuilder;
 use windows::{
     Foundation::Numerics::{Vector2, Vector3},
@@ -124,12 +123,11 @@ impl Core {
     }
 }
 
-#[derive(Clone, Weak)]
 pub struct Ribbon {
     compositor: Compositor,
     ribbon_container: ContainerVisual,
-    core: Arc<RwLock<Core>>,
-    events: Arc<EventQueues>,
+    core: RwLock<Core>,
+    events: EventQueues,
 }
 
 #[derive(TypedBuilder)]
@@ -146,7 +144,7 @@ impl RibbonParams {
         this.cells.push(Cell::new(panel, &this.compositor, limit)?);
         Ok(this)
     }
-    pub fn create(self) -> crate::Result<Ribbon> {
+    pub fn create(self) -> crate::Result<Arc<Ribbon>> {
         let ribbon_container = self.compositor.CreateContainerVisual()?;
         for cell in &self.cells {
             ribbon_container
@@ -154,17 +152,17 @@ impl RibbonParams {
                 .InsertAtTop(cell.container.clone())?;
         }
         // ribbon_container.SetComment(HSTRING::from("RIBBON_CONTAINER"))?;
-        let core = Arc::new(RwLock::new(Core {
+        let core = RwLock::new(Core {
             orientation: self.orientation,
             cells: self.cells,
             mouse_pos: None,
-        }));
-        Ok(Ribbon {
+        });
+        Ok(Arc::new(Ribbon {
             compositor: self.compositor,
             ribbon_container,
             core,
-            events: Arc::new(EventQueues::new()),
-        })
+            events: EventQueues::new(),
+        }))
     }
 }
 
