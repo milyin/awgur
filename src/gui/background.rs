@@ -1,4 +1,4 @@
-use async_events::{EventBox, EventQueues, EventStream};
+use async_events::{EventBox, EventStream, EventStreams};
 use async_std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use float_ord::FloatOrd;
@@ -75,7 +75,7 @@ impl Core {
 pub struct Background {
     container: ContainerVisual,
     core: RwLock<Core>,
-    events: EventQueues,
+    panel_events: EventStreams<PanelEvent>,
 }
 
 #[derive(TypedBuilder)]
@@ -97,7 +97,7 @@ impl BackgroundParams {
         Ok(Arc::new(Background {
             container: container.into(),
             core,
-            events: EventQueues::new(),
+            panel_events: EventStreams::new(),
         }))
     }
 }
@@ -128,7 +128,7 @@ impl Panel for Background {
 
 impl EventSource<PanelEvent> for Background {
     fn event_stream(&self) -> EventStream<PanelEvent> {
-        self.events.create_event_stream()
+        self.panel_events.create_event_stream()
     }
 }
 
@@ -142,7 +142,7 @@ impl EventSink<PanelEvent> for Background {
         if let PanelEvent::Resized(size) = &event {
             self.core.write().await.resize(*size)?;
         }
-        self.events.send_event(event, source).await;
+        self.panel_events.send_event(event, source).await;
         Ok(())
     }
 }

@@ -1,5 +1,5 @@
 use super::{is_translated_point_in_box, ArcPanel, EventSink, EventSource, Panel, PanelEvent};
-use async_events::{EventBox, EventQueues, EventStream};
+use async_events::{EventBox, EventStream, EventStreams};
 use async_std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use typed_builder::TypedBuilder;
@@ -127,7 +127,7 @@ pub struct Ribbon {
     compositor: Compositor,
     ribbon_container: ContainerVisual,
     core: RwLock<Core>,
-    events: EventQueues,
+    panel_events: EventStreams<PanelEvent>,
 }
 
 #[derive(TypedBuilder)]
@@ -161,7 +161,7 @@ impl RibbonParams {
             compositor: self.compositor,
             ribbon_container,
             core,
-            events: EventQueues::new(),
+            panel_events: EventStreams::new(),
         }))
     }
 }
@@ -240,7 +240,7 @@ impl Panel for Ribbon {
 
 impl EventSource<PanelEvent> for Ribbon {
     fn event_stream(&self) -> EventStream<PanelEvent> {
-        self.events.create_event_stream()
+        self.panel_events.create_event_stream()
     }
 }
 
@@ -269,7 +269,7 @@ impl EventSink<PanelEvent> for Ribbon {
                     .await
             }
         }?;
-        self.events.send_event(event, source).await;
+        self.panel_events.send_event(event, source).await;
         Ok(())
     }
 }

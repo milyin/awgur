@@ -3,7 +3,7 @@ use super::{
     Background, BackgroundParams, EventSink, EventSource, LayerStack, LayerStackParams, Panel,
     PanelEvent,
 };
-use async_events::{EventBox, EventQueues, EventStream};
+use async_events::{EventBox, EventStream, EventStreams};
 use async_std::sync::Arc;
 use async_std::sync::RwLock;
 use async_trait::async_trait;
@@ -28,7 +28,8 @@ struct Core {
 pub struct Button {
     container: ContainerVisual,
     core: RwLock<Core>,
-    events: EventQueues,
+    panel_events: EventStreams<PanelEvent>,
+    button_events: EventStreams<ButtonEvent>,
 }
 
 #[derive(TypedBuilder)]
@@ -50,7 +51,8 @@ impl ButtonParams {
         Ok(Arc::new(Button {
             container,
             core,
-            events: EventQueues::new(),
+            panel_events: EventStreams::new(),
+            button_events: EventStreams::new(),
         }))
     }
 }
@@ -71,13 +73,13 @@ impl Core {
 
 impl EventSource<ButtonEvent> for Button {
     fn event_stream(&self) -> EventStream<ButtonEvent> {
-        self.events.create_event_stream()
+        self.button_events.create_event_stream()
     }
 }
 
 impl EventSource<PanelEvent> for Button {
     fn event_stream(&self) -> EventStream<PanelEvent> {
-        self.events.create_event_stream()
+        self.panel_events.create_event_stream()
     }
 }
 
@@ -90,7 +92,7 @@ impl EventSink<PanelEvent> for Button {
     ) -> crate::Result<()> {
         let skin = self.core.read().await.skin_panel();
         skin.on_event(event.clone(), source.clone()).await?;
-        self.events.send_event(event.clone(), source.clone()).await;
+        self.panel_events.send_event(event.clone(), source.clone()).await;
 
         match event {
             PanelEvent::MouseInput {
@@ -102,12 +104,12 @@ impl EventSink<PanelEvent> for Button {
                     if state == ElementState::Pressed {
                         if in_slot {
                             self.core.write().await.press();
-                            self.events.send_event(ButtonEvent::Press, source).await;
+                            self.button_events.send_event(ButtonEvent::Press, source).await;
                         }
                     } else if state == ElementState::Released {
                         let released = self.core.write().await.release();
                         if released {
-                            self.events
+                            self.button_events
                                 .send_event(ButtonEvent::Release(in_slot), source)
                                 .await;
                         }
@@ -138,7 +140,7 @@ pub trait ButtonSkin: ArcPanel + EventSink<ButtonEvent> {}
 pub struct SimpleButtonSkin {
     layer_stack: LayerStack,
     background: Arc<Background>,
-    events: EventQueues,
+    panel_events: EventStreams<PanelEvent>,
 }
 
 #[derive(TypedBuilder)]
@@ -160,11 +162,10 @@ impl SimpleButtonSkinParams {
             .build()
             .push_panel(background.clone())
             .create()?;
-        let events = EventQueues::new();
         Ok(Arc::new(SimpleButtonSkin {
             layer_stack,
             background,
-            events,
+            panel_events: EventStreams::new(),
         }))
     }
 }
@@ -193,7 +194,7 @@ impl EventSink<PanelEvent> for SimpleButtonSkin {
 
 impl EventSource<PanelEvent> for SimpleButtonSkin {
     fn event_stream(&self) -> EventStream<PanelEvent> {
-        self.events.create_event_stream()
+        self.panel_events.create_event_stream()
     }
 }
 

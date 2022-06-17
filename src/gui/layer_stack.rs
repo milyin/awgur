@@ -1,7 +1,7 @@
 use async_std::sync::{Arc, RwLock};
 
 use super::{ArcPanel, EventSink, EventSource, Panel, PanelEvent};
-use async_events::{EventBox, EventQueues, EventStream};
+use async_events::{EventBox, EventStream, EventStreams};
 use async_trait::async_trait;
 
 use typed_builder::TypedBuilder;
@@ -14,7 +14,7 @@ struct Core {
 pub struct LayerStack {
     container: ContainerVisual,
     core: RwLock<Core>,
-    events: EventQueues,
+    panel_events: EventStreams<PanelEvent>,
 }
 
 impl LayerStack {
@@ -112,7 +112,7 @@ impl LayerStackParams {
         Ok(LayerStack {
             container,
             core,
-            events: EventQueues::new(),
+            panel_events: EventStreams::new(),
         })
     }
 }
@@ -132,7 +132,7 @@ impl Panel for LayerStack {
 
 impl EventSource<PanelEvent> for LayerStack {
     fn event_stream(&self) -> EventStream<PanelEvent> {
-        self.events.create_event_stream()
+        self.panel_events.create_event_stream()
     }
 }
 
@@ -144,7 +144,7 @@ impl EventSink<PanelEvent> for LayerStack {
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         self.translate_event(event.clone(), source.clone()).await?;
-        self.events.send_event(event, source).await;
+        self.panel_events.send_event(event, source).await;
         Ok(())
     }
 }
