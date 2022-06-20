@@ -3,7 +3,7 @@ use super::{
     Background, BackgroundParams, EventSink, EventSource, LayerStack, LayerStackParams, Panel,
     PanelEvent,
 };
-use async_events::{EventBox, EventStream, EventStreams};
+use async_event_streams::{EventBox, EventStream, EventStreams};
 use async_std::sync::Arc;
 use async_std::sync::RwLock;
 use async_trait::async_trait;

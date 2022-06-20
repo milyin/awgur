@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use async_events::{EventBox, EventStream};
+use async_event_streams::{EventBox, EventStream};
 use async_trait::async_trait;
 use futures::{
     channel::mpsc::{channel, Sender},

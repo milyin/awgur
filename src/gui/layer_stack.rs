@@ -1,7 +1,7 @@
 use async_std::sync::{Arc, RwLock};
 
 use super::{ArcPanel, EventSink, EventSource, Panel, PanelEvent};
-use async_events::{EventBox, EventStream, EventStreams};
+use async_event_streams::{EventBox, EventStream, EventStreams};
 use async_trait::async_trait;
 
 use typed_builder::TypedBuilder;

@@ -1,4 +1,4 @@
-use async_events::{EventBox, EventStream, EventStreams};
+use async_event_streams::{EventBox, EventStream, EventStreams};
 use async_std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use float_ord::FloatOrd;
