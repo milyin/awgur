@@ -88,7 +88,7 @@ fn main() -> wag::Result<()> {
             //         rotate_background_colors(&mut a, &mut b, &mut c).await?;
             //     }
             while let Some(event) = stream.next().await {
-                if ButtonEvent::Release(true) == *event.as_ref() {
+                if ButtonEvent::Release(true) == *event {
                     rotate_background_colors(&a, &b, &c).await?;
                 }
             }

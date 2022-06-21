@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-async_event_streams = "0.1.0"
+async_event_streams = "0.1.1"
 futures = "0.3.17"
 thiserror = "1.0"
 float-ord = "0.3.2"
