@@ -14,7 +14,7 @@ async-trait = "0.1.52"
 async-std = "1.11.0"
 
 [dependencies.windows]
-version = "0.37.0"
+version = "0.38.0"
 features = [
   "Foundation_Collections",
   "Foundation_Numerics",
