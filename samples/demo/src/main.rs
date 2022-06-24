@@ -18,7 +18,13 @@ use windows::{
     UI::{Colors, Composition::Compositor},
 };
 
+use ::windows_app::Microsoft::Windows::System::Power::*;
+
 fn main() -> wag::Result<()> {
+    ::windows_app::bootstrap::initialize()?;
+    let charge = PowerManager::RemainingChargePercent()?;
+    println!("Remaining charge: {charge}%");
+
     let _window_thread = initialize_window_thread()?;
     let pool = ThreadPool::builder() //.pool_size(8)
         .create()?;
@@ -128,6 +134,8 @@ fn main() -> wag::Result<()> {
     let window = Window::new(compositor, "demo", root_visual, channel);
     let _window = window.open()?;
     run_message_loop();
+
+    windows_app::bootstrap::uninitialize()?;
 
     Ok(())
 }
