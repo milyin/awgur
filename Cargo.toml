@@ -4,8 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-async_events = { path = "../async-events" }
-derive_weak = "0.1.0"
+async_event_streams = "0.1.1"
 futures = "0.3.17"
 thiserror = "1.0"
 float-ord = "0.3.2"
@@ -17,18 +16,26 @@ async-std = "1.11.0"
 [dependencies.windows]
 version = "0.37.0"
 features = [
-    "Foundation_Collections",
-    "Foundation_Numerics",
-    "Graphics",
-    "System",
-    "Foundation",
-    "UI_Composition",
-    "UI_Composition_Desktop",
-    "Win32_Foundation",
-    "Win32_Graphics_Gdi",
-    "Win32_System_LibraryLoader",
-    "Win32_System_WinRT",
-    "Win32_UI_WindowsAndMessaging",
-    "Win32_System_WinRT_Composition",
-    "Graphics_DirectX",
+  "Foundation_Collections",
+  "Foundation_Numerics",
+  "Graphics",
+  "System",
+  "Foundation",
+  "UI_Composition",
+  "UI_Composition_Desktop",
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_System_LibraryLoader",
+  "Win32_System_WinRT",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_System_WinRT_Composition",
+  "Graphics_DirectX",
 ]
+
+[build-dependencies.windows-app]
+git = "https://github.com/microsoft/windows-app-rs"
+features = ["WindowsAppSdk_Foundation"]
+
+[dependencies.windows-app]
+git = "https://github.com/microsoft/windows-app-rs"
+features = ["WindowsAppSdk_Foundation", "Windows_System_Power"]

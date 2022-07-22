@@ -1,56 +1,54 @@
 use async_std::sync::{Arc, RwLock};
 
-use super::{EventSink, EventSource, Panel, PanelEvent};
-use async_events::{EventBox, EventQueues, EventStream};
+use super::{ArcPanel, EventSink, EventSource, Panel, PanelEvent};
+use async_event_streams::{EventBox, EventStream, EventStreams};
 use async_trait::async_trait;
 
-use derive_weak::Weak;
 use typed_builder::TypedBuilder;
 use windows::UI::Composition::{Compositor, ContainerVisual};
 
 struct Core {
-    layers: Vec<Box<dyn Panel>>,
+    layers: Vec<Box<dyn ArcPanel>>,
 }
 
-#[derive(Clone, Weak)]
 pub struct LayerStack {
     container: ContainerVisual,
-    core: Arc<RwLock<Core>>,
-    events: Arc<EventQueues>,
+    core: RwLock<Core>,
+    panel_events: EventStreams<PanelEvent>,
 }
 
 impl LayerStack {
-    async fn layers(&self) -> Vec<Box<dyn Panel>> {
+    async fn layers(&self) -> Vec<Box<dyn ArcPanel>> {
         self.core.read().await.layers.clone()
     }
 
-    pub async fn push_panel(&mut self, mut panel: impl Panel + 'static) -> crate::Result<()> {
+    pub async fn push_panel(&mut self, panel: impl ArcPanel) -> crate::Result<()> {
         panel.attach(self.container.clone())?;
-        self.core.write().await.layers.push(Box::new(panel));
+        self.core.write().await.layers.push(panel.clone_box());
         Ok(())
     }
 
-    pub async fn remove_panel(&mut self, mut panel: impl Panel) -> crate::Result<()> {
+    pub async fn remove_panel(&mut self, panel: impl ArcPanel) -> crate::Result<()> {
         let mut core = self.core.write().await;
-        if let Some(index) = core.layers.iter().position(|v| *v == panel) {
+        if let Some(index) = core.layers.iter().position(|v| v.id() == panel.id()) {
             panel.detach()?;
             core.layers.remove(index);
         }
         Ok(())
     }
     async fn translate_event_to_all_layers(
-        &mut self,
+        &self,
         event: PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         // TODO: run simultaneously
-        for mut item in self.layers().await {
+        for item in self.layers().await {
             item.on_event(event.clone(), source.clone()).await?;
         }
         Ok(())
     }
     async fn translate_event_to_top_layer(
-        &mut self,
+        &self,
         event: PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
@@ -60,7 +58,7 @@ impl LayerStack {
         Ok(())
     }
     async fn translate_event(
-        &mut self,
+        &self,
         event: PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
@@ -95,12 +93,12 @@ impl LayerStack {
 pub struct LayerStackParams {
     compositor: Compositor,
     #[builder(default)]
-    layers: Vec<Box<dyn Panel>>,
+    layers: Vec<Box<dyn ArcPanel>>,
 }
 
 impl LayerStackParams {
-    pub fn push_panel(mut self, panel: impl Panel + 'static) -> Self {
-        self.layers.push(Box::new(panel));
+    pub fn push_panel(mut self, panel: impl ArcPanel) -> Self {
+        self.layers.push(panel.clone_box());
         self
     }
     pub fn create(self) -> crate::Result<LayerStack> {
@@ -109,50 +107,44 @@ impl LayerStackParams {
         for layer in &mut layers {
             layer.attach(container.clone())?;
         }
-        let core = Arc::new(RwLock::new(Core { layers }));
+        let core = RwLock::new(Core { layers });
         // container.SetComment(HSTRING::from("LAYER_STACK"))?;
         Ok(LayerStack {
             container,
             core,
-            events: Arc::new(EventQueues::new()),
+            panel_events: EventStreams::new(),
         })
     }
 }
 
 impl Panel for LayerStack {
-    fn id(&self) -> usize {
-        Arc::as_ptr(&self.core) as usize
-    }
-    fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
+    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
         container.Children()?.InsertAtTop(self.container.clone())?;
         Ok(())
     }
-    fn detach(&mut self) -> crate::Result<()> {
+    fn detach(&self) -> crate::Result<()> {
         if let Ok(parent) = self.container.Parent() {
             parent.Children()?.Remove(&self.container.clone())?;
         }
         Ok(())
     }
-    fn clone_panel(&self) -> Box<(dyn Panel + 'static)> {
-        Box::new(self.clone())
-    }
 }
 
 impl EventSource<PanelEvent> for LayerStack {
     fn event_stream(&self) -> EventStream<PanelEvent> {
-        self.events.create_event_stream()
+        self.panel_events.create_event_stream()
     }
 }
 
 #[async_trait]
 impl EventSink<PanelEvent> for LayerStack {
     async fn on_event(
-        &mut self,
+        &self,
         event: PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         self.translate_event(event.clone(), source.clone()).await?;
-        self.events.send_event(event, source).await;
+        self.panel_events.send_event(event, source).await;
         Ok(())
     }
 }

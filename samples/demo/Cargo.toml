@@ -1,0 +1,25 @@
+[package]
+name = "demo"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+wag = { path = "../.." }
+futures = "0.3.21"
+
+[dependencies.windows]
+version = "0.37.0"
+features = [
+    "Foundation_Collections",
+    "Foundation_Numerics",
+    "UI_Composition",
+    "UI_Composition_Desktop",
+]
+
+[build-dependencies.windows-app]
+git = "https://github.com/microsoft/windows-app-rs"
+features = ["WindowsAppSdk_Foundation"]
+
+[dependencies.windows-app]
+git = "https://github.com/microsoft/windows-app-rs"
+features = ["WindowsAppSdk_Foundation", "Windows_System_Power"]

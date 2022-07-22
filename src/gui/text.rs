@@ -1,3 +1,65 @@
+use async_event_streams::EventStreams;
+use async_std::sync::RwLock;
+use typed_builder::TypedBuilder;
+use windows::UI::{Composition::{
+    CompositionDrawingSurface, Compositor, ContainerVisual, SpriteVisual,
+}, Colors};
+
+use super::PanelEvent;
+
+struct Core {
+    compositor: Compositor,
+    surface: Option<CompositionDrawingSurface>,
+    visual: SpriteVisual,
+}
+
+impl Core {
+    fn redraw_text(&self) -> crate::Result<()> {
+        if let Some(ref surface) = self.surface {
+            let ds = CanvasComposition::CreateDrawingSession(surface)?;
+            ds.Clear(Colors::Transparent()?)?;
+
+            let size = surface.Size()?;
+            let text_format = CanvasTextFormat::new()?;
+            text_format.SetFontFamily("Arial")?;
+            text_format.SetFontSize(size.Height / self.params.font_scale)?;
+            let text: String = self.params.text.clone().into();
+            let text_layout = CanvasTextLayout::Create(
+                canvas_device(),
+                text,
+                text_format,
+                size.Width,
+                size.Height,
+            )?;
+            text_layout.SetVerticalAlignment(CanvasVerticalAlignment::Center)?;
+            text_layout.SetHorizontalAlignment(CanvasHorizontalAlignment::Center)?;
+            let color = if self.params.enabled {
+                self.params.color.clone()
+            } else {
+                Colors::Gray()?
+            };
+
+            ds.DrawTextLayoutAtCoordsWithColor(text_layout, 0., 0., color)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+pub struct Text {
+    container: ContainerVisual,
+    core: RwLock<Core>,
+    panel_events: EventStreams<PanelEvent>,
+}
+
+impl Text {}
+
+#[derive(TypedBuilder)]
+pub struct TextParams {
+    text: String,
+}
+
+/*
 use async_object_derive::async_object_decl;
 use windows::{
     Foundation::Size,
@@ -114,3 +176,4 @@ impl Text {
         Ok(text)
     }
 }
+*/

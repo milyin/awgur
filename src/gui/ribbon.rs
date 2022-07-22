@@ -1,8 +1,7 @@
-use super::{is_translated_point_in_box, EventSink, EventSource, Panel, PanelEvent};
-use async_events::{EventBox, EventQueues, EventStream};
+use super::{is_translated_point_in_box, ArcPanel, EventSink, EventSource, Panel, PanelEvent};
+use async_event_streams::{EventBox, EventStream, EventStreams};
 use async_std::sync::{Arc, RwLock};
 use async_trait::async_trait;
-use derive_weak::Weak;
 use typed_builder::TypedBuilder;
 use windows::{
     Foundation::Numerics::{Vector2, Vector3},
@@ -60,22 +59,18 @@ impl Default for CellLimit {
 
 #[derive(Clone)]
 pub struct Cell {
-    panel: Box<dyn Panel>,
+    panel: Box<dyn ArcPanel>,
     container: ContainerVisual,
     limit: CellLimit,
 }
 
 impl Cell {
-    fn new(
-        panel: impl Panel + 'static,
-        compositor: &Compositor,
-        limit: CellLimit,
-    ) -> crate::Result<Self> {
-        let mut panel = panel;
+    fn new(panel: impl ArcPanel, compositor: &Compositor, limit: CellLimit) -> crate::Result<Self> {
+        let panel = panel;
         let container = compositor.CreateContainerVisual()?;
         panel.attach(container.clone())?;
         Ok(Self {
-            panel: Box::new(panel),
+            panel: panel.clone_box(),
             container,
             limit,
         })
@@ -103,7 +98,7 @@ impl Cell {
 
 impl PartialEq for Cell {
     fn eq(&self, other: &Self) -> bool {
-        self.panel.as_ref() as *const dyn Panel == other.panel.as_ref() as *const dyn Panel
+        self.panel.id() == other.panel.id()
     }
 }
 
@@ -128,12 +123,11 @@ impl Core {
     }
 }
 
-#[derive(Clone, Weak)]
 pub struct Ribbon {
     compositor: Compositor,
     ribbon_container: ContainerVisual,
-    core: Arc<RwLock<Core>>,
-    events: Arc<EventQueues>,
+    core: RwLock<Core>,
+    panel_events: EventStreams<PanelEvent>,
 }
 
 #[derive(TypedBuilder)]
@@ -145,12 +139,12 @@ pub struct RibbonParams {
 }
 
 impl RibbonParams {
-    pub fn add_panel(self, panel: impl Panel + 'static, limit: CellLimit) -> crate::Result<Self> {
+    pub fn add_panel(self, panel: impl ArcPanel, limit: CellLimit) -> crate::Result<Self> {
         let mut this = self;
         this.cells.push(Cell::new(panel, &this.compositor, limit)?);
         Ok(this)
     }
-    pub fn create(self) -> crate::Result<Ribbon> {
+    pub fn create(self) -> crate::Result<Arc<Ribbon>> {
         let ribbon_container = self.compositor.CreateContainerVisual()?;
         for cell in &self.cells {
             ribbon_container
@@ -158,26 +152,22 @@ impl RibbonParams {
                 .InsertAtTop(cell.container.clone())?;
         }
         // ribbon_container.SetComment(HSTRING::from("RIBBON_CONTAINER"))?;
-        let core = Arc::new(RwLock::new(Core {
+        let core = RwLock::new(Core {
             orientation: self.orientation,
             cells: self.cells,
             mouse_pos: None,
-        }));
-        Ok(Ribbon {
+        });
+        Ok(Arc::new(Ribbon {
             compositor: self.compositor,
             ribbon_container,
             core,
-            events: Arc::new(EventQueues::new()),
-        })
+            panel_events: EventStreams::new(),
+        }))
     }
 }
 
 impl Ribbon {
-    pub async fn add_panel(
-        &mut self,
-        panel: impl Panel + 'static,
-        limit: CellLimit,
-    ) -> crate::Result<()> {
+    pub async fn add_panel(&self, panel: impl ArcPanel, limit: CellLimit) -> crate::Result<()> {
         let cell = Cell::new(panel, &self.compositor, limit)?;
         self.ribbon_container
             .Children()?
@@ -186,7 +176,7 @@ impl Ribbon {
         self.resize_cells(self.ribbon_container.Size()?).await?;
         Ok(())
     }
-    async fn resize_cells(&mut self, size: Vector2) -> crate::Result<()> {
+    async fn resize_cells(&self, size: Vector2) -> crate::Result<()> {
         self.ribbon_container.SetSize(size)?;
         let (orientation, mut cells) = {
             let v = self.core.read().await;
@@ -234,36 +224,30 @@ impl Ribbon {
 }
 
 impl Panel for Ribbon {
-    fn id(&self) -> usize {
-        Arc::as_ptr(&self.core) as usize
-    }
-    fn attach(&mut self, container: ContainerVisual) -> crate::Result<()> {
+    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
         container
             .Children()?
             .InsertAtTop(self.ribbon_container.clone())?;
         Ok(())
     }
-    fn detach(&mut self) -> crate::Result<()> {
+    fn detach(&self) -> crate::Result<()> {
         if let Ok(parent) = self.ribbon_container.Parent() {
             parent.Children()?.Remove(&self.ribbon_container)?;
         }
         Ok(())
     }
-    fn clone_panel(&self) -> Box<dyn Panel> {
-        Box::new(self.clone())
-    }
 }
 
 impl EventSource<PanelEvent> for Ribbon {
     fn event_stream(&self) -> EventStream<PanelEvent> {
-        self.events.create_event_stream()
+        self.panel_events.create_event_stream()
     }
 }
 
 #[async_trait]
 impl EventSink<PanelEvent> for Ribbon {
     async fn on_event(
-        &mut self,
+        &self,
         event: PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
@@ -285,34 +269,34 @@ impl EventSink<PanelEvent> for Ribbon {
                     .await
             }
         }?;
-        self.events.send_event(event, source).await;
+        self.panel_events.send_event(event, source).await;
         Ok(())
     }
 }
 
 impl Ribbon {
     async fn translate_panel_event_default(
-        &mut self,
+        &self,
         event: PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         // TODO: run simultaneosuly
         let cells = self.core.read().await.cells();
-        for mut cell in cells {
+        for cell in cells {
             cell.panel.on_event(event.clone(), source.clone()).await?;
         }
         Ok(())
     }
 
     async fn translate_panel_event_resized(
-        &mut self,
+        &self,
         size: Vector2,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         self.resize_cells(size).await?;
         // TODO: run simultaneosuly
         let cells = self.core.read().await.cells();
-        for mut cell in cells {
+        for cell in cells {
             let size = cell.container.Size()?;
             cell.panel
                 .on_event(PanelEvent::Resized(size), source.clone())
@@ -322,14 +306,14 @@ impl Ribbon {
     }
 
     async fn translate_slot_event_cursor_moved(
-        &mut self,
+        &self,
         mouse_pos: Vector2,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         self.core.write().await.set_mouse_pos(mouse_pos);
         // TODO: run simultaneosuly
         let cells = self.core.read().await.cells();
-        for mut cell in cells {
+        for cell in cells {
             let mouse_pos = cell.translate_point(mouse_pos)?;
             cell.panel
                 .on_event(PanelEvent::CursorMoved(mouse_pos), source.clone())
@@ -339,7 +323,7 @@ impl Ribbon {
     }
 
     async fn translate_slot_event_mouse_input(
-        &mut self,
+        &self,
         state: ElementState,
         button: MouseButton,
         source: Option<Arc<EventBox>>,
@@ -347,7 +331,7 @@ impl Ribbon {
         if let Some(mouse_pos) = self.core.read().await.get_mouse_pos() {
             // TODO: run simultaneosuly
             let cells = self.core.read().await.cells();
-            for mut cell in cells {
+            for cell in cells {
                 let mouse_pos = cell.translate_point(mouse_pos)?;
                 let in_slot = cell.is_translated_point_in_cell(mouse_pos)?;
                 cell.panel

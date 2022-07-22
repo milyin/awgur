@@ -7,14 +7,14 @@ mod ribbon;
 
 use std::sync::Arc;
 
-use async_events::{EventBox, EventStream};
+use async_event_streams::{EventBox, EventStream};
 use async_trait::async_trait;
-pub use background::{Background, BackgroundParams, WBackground};
+pub use background::{Background, BackgroundParams};
 pub use button::{
     Button, ButtonEvent, ButtonParams, ButtonSkin, SimpleButtonSkin, SimpleButtonSkinParams,
 };
 pub use layer_stack::{LayerStack, LayerStackParams};
-pub use panel::{spawn_window_event_receiver, Panel, PanelEvent};
+pub use panel::{spawn_window_event_receiver, ArcPanel, Panel, PanelEvent};
 pub use ribbon::{CellLimit, Ribbon, RibbonOrientation, RibbonParams};
 // pub use text::{Text, WText};
 
@@ -96,5 +96,5 @@ pub trait EventSource<EVT: Send + Sync + 'static> {
 
 #[async_trait]
 pub trait EventSink<EVT: Send + Sync + 'static> {
-    async fn on_event(&mut self, event: EVT, source: Option<Arc<EventBox>>) -> crate::Result<()>;
+    async fn on_event(&self, event: EVT, source: Option<Arc<EventBox>>) -> crate::Result<()>;
 }
