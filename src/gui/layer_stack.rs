@@ -1,11 +1,11 @@
 use async_std::sync::{Arc, RwLock};
 
-use super::{ArcPanel, EventSink, EventSource, Panel, PanelEvent};
+use super::{attach, ArcPanel, EventSink, EventSource, Panel, PanelEvent, detach};
 use async_event_streams::{EventBox, EventStream, EventStreams};
 use async_trait::async_trait;
 
 use typed_builder::TypedBuilder;
-use windows::UI::Composition::{Compositor, ContainerVisual};
+use windows::UI::Composition::{Compositor, ContainerVisual, Visual};
 
 struct Core {
     layers: Vec<Box<dyn ArcPanel>>,
@@ -23,7 +23,7 @@ impl LayerStack {
     }
 
     pub async fn push_panel(&mut self, panel: impl ArcPanel) -> crate::Result<()> {
-        panel.attach(self.container.clone())?;
+        attach(&self.container, &panel)?;
         self.core.write().await.layers.push(panel.clone_box());
         Ok(())
     }
@@ -31,7 +31,7 @@ impl LayerStack {
     pub async fn remove_panel(&mut self, panel: impl ArcPanel) -> crate::Result<()> {
         let mut core = self.core.write().await;
         if let Some(index) = core.layers.iter().position(|v| v.id() == panel.id()) {
-            panel.detach()?;
+            detach(&panel)?;
             core.layers.remove(index);
         }
         Ok(())
@@ -105,7 +105,7 @@ impl LayerStackParams {
         let mut layers = self.layers;
         let container = self.compositor.CreateContainerVisual()?;
         for layer in &mut layers {
-            layer.attach(container.clone())?;
+            attach(&container, layer)?;
         }
         let core = RwLock::new(Core { layers });
         // container.SetComment(HSTRING::from("LAYER_STACK"))?;
@@ -118,15 +118,8 @@ impl LayerStackParams {
 }
 
 impl Panel for LayerStack {
-    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
-        container.Children()?.InsertAtTop(&self.container)?;
-        Ok(())
-    }
-    fn detach(&self) -> crate::Result<()> {
-        if let Ok(parent) = self.container.Parent() {
-            parent.Children()?.Remove(&self.container)?;
-        }
-        Ok(())
+    fn outer_frame(&self) -> Visual {
+        self.container.clone().into()
     }
 }
 

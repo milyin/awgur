@@ -7,7 +7,7 @@ use windows::{
     Foundation::Numerics::Vector2,
     UI::{
         Color,
-        Composition::{CompositionShape, Compositor, ContainerVisual, ShapeVisual},
+        Composition::{CompositionShape, Compositor, ContainerVisual, ShapeVisual, Visual},
     },
 };
 
@@ -114,15 +114,8 @@ impl Background {
 
 #[async_trait]
 impl Panel for Background {
-    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
-        container.Children()?.InsertAtTop(&self.container)?;
-        Ok(())
-    }
-    fn detach(&self) -> crate::Result<()> {
-        if let Ok(parent) = self.container.Parent() {
-            parent.Children()?.Remove(&self.container)?;
-        }
-        Ok(())
+    fn outer_frame(&self) -> Visual {
+        self.container.clone().into()
     }
 }
 

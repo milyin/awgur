@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use typed_builder::TypedBuilder;
 use windows::{
     Foundation::Numerics::Vector2,
-    UI::Composition::{Compositor, ContainerVisual},
+    UI::Composition::{Compositor, ContainerVisual, Visual},
 };
 
 use super::{EventSink, EventSource, Panel, PanelEvent};
@@ -53,15 +53,8 @@ impl EventSource<PanelEvent> for Text {
 
 #[async_trait]
 impl Panel for Text {
-    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
-        container.Children()?.InsertAtTop(&self.container)?;
-        Ok(())
-    }
-    fn detach(&self) -> crate::Result<()> {
-        if let Ok(parent) = self.container.Parent() {
-            parent.Children()?.Remove(&self.container)?;
-        }
-        Ok(())
+    fn outer_frame(&self) -> Visual {
+        self.container.clone().into()
     }
 }
 

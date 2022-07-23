@@ -1,4 +1,4 @@
-use super::ArcPanel;
+use super::{attach, ArcPanel};
 use super::{
     Background, BackgroundParams, EventSink, EventSource, LayerStack, LayerStackParams, Panel,
     PanelEvent,
@@ -8,6 +8,7 @@ use async_std::sync::Arc;
 use async_std::sync::RwLock;
 use async_trait::async_trait;
 use typed_builder::TypedBuilder;
+use windows::UI::Composition::Visual;
 use windows::UI::{
     Color, Colors,
     Composition::{Compositor, ContainerVisual},
@@ -43,7 +44,7 @@ impl ButtonParams {
     pub fn create(self) -> crate::Result<Arc<Button>> {
         let container = self.compositor.CreateContainerVisual()?;
         let skin = self.skin;
-        skin.attach(container.clone())?;
+        attach(&container, &skin)?;
         let core = RwLock::new(Core {
             skin,
             pressed: false,
@@ -92,7 +93,9 @@ impl EventSink<PanelEvent> for Button {
     ) -> crate::Result<()> {
         let skin = self.core.read().await.skin_panel();
         skin.on_event(event.clone(), source.clone()).await?;
-        self.panel_events.send_event(event.clone(), source.clone()).await;
+        self.panel_events
+            .send_event(event.clone(), source.clone())
+            .await;
 
         match event {
             PanelEvent::MouseInput {
@@ -104,7 +107,9 @@ impl EventSink<PanelEvent> for Button {
                     if state == ElementState::Pressed {
                         if in_slot {
                             self.core.write().await.press();
-                            self.button_events.send_event(ButtonEvent::Press, source).await;
+                            self.button_events
+                                .send_event(ButtonEvent::Press, source)
+                                .await;
                         }
                     } else if state == ElementState::Released {
                         let released = self.core.write().await.release();
@@ -123,15 +128,8 @@ impl EventSink<PanelEvent> for Button {
 }
 
 impl Panel for Button {
-    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
-        container.Children()?.InsertAtTop(&self.container)?;
-        Ok(())
-    }
-    fn detach(&self) -> crate::Result<()> {
-        if let Ok(parent) = self.container.Parent() {
-            parent.Children()?.Remove(&self.container)?;
-        }
-        Ok(())
+    fn outer_frame(&self) -> Visual {
+        self.container.clone().into()
     }
 }
 
@@ -199,12 +197,8 @@ impl EventSource<PanelEvent> for SimpleButtonSkin {
 }
 
 impl Panel for SimpleButtonSkin {
-    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
-        self.layer_stack.attach(container)
-    }
-
-    fn detach(&self) -> crate::Result<()> {
-        self.layer_stack.detach()
+    fn outer_frame(&self) -> Visual {
+        self.layer_stack.outer_frame()
     }
 }
 

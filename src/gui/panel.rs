@@ -10,7 +10,10 @@ use futures::{
     task::{Spawn, SpawnExt},
     StreamExt,
 };
-use windows::{Foundation::Numerics::Vector2, UI::Composition::ContainerVisual};
+use windows::{
+    Foundation::Numerics::Vector2,
+    UI::Composition::{ContainerVisual, Visual},
+};
 use winit::event::{ElementState, MouseButton, WindowEvent};
 
 use crate::async_handle_err;
@@ -47,8 +50,25 @@ impl From<WindowEvent<'static>> for PanelEvent {
 }
 
 pub trait Panel: Send + Sync + EventSource<PanelEvent> + EventSink<PanelEvent> {
-    fn attach(&self, container: ContainerVisual) -> crate::Result<()>;
-    fn detach(&self) -> crate::Result<()>;
+    ///
+    /// The visual object provided to parental panel. Position and size of this object is
+    /// under control of the parent (external panel where this panel is inserted into).
+    /// Usually it's ContainerVisual which includes other visuals of the panel, but it's not
+    /// necessary.
+    ///
+    fn outer_frame(&self) -> Visual;
+}
+pub fn attach(container: &ContainerVisual, panel: &impl Panel) -> crate::Result<()> {
+    container.Children()?.InsertAtTop(&panel.outer_frame())?;
+    Ok(())
+}
+pub fn detach(panel: &impl Panel) -> crate::Result<()> {
+    // TODO: implement owner notification that panel is detached
+    let visual = panel.outer_frame();
+    if let Ok(parent) = visual.Parent() {
+        parent.Children()?.Remove(&visual)?;
+    }
+    Ok(())
 }
 
 pub trait ArcPanel: Panel {
@@ -70,12 +90,29 @@ impl<EVT: Send + Sync + 'static, T: EventSink<EVT> + Send + Sync> EventSink<EVT>
 }
 
 impl<T: Panel> Panel for Arc<T> {
-    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
-        self.as_ref().attach(container)
+    fn outer_frame(&self) -> Visual {
+        self.as_ref().outer_frame()
     }
+}
 
-    fn detach(&self) -> crate::Result<()> {
-        self.as_ref().detach()
+impl<EVT: Send + Sync + 'static, T: EventSource<EVT> + ?Sized> EventSource<EVT> for Box<T> {
+    fn event_stream(&self) -> EventStream<EVT> {
+        self.as_ref().event_stream()
+    }
+}
+
+#[async_trait]
+impl<EVT: Send + Sync + 'static, T: EventSink<EVT> + Send + Sync + ?Sized> EventSink<EVT>
+    for Box<T>
+{
+    async fn on_event(&self, event: EVT, source: Option<Arc<EventBox>>) -> crate::Result<()> {
+        self.as_ref().on_event(event, source).await
+    }
+}
+
+impl<T: Panel + ?Sized> Panel for Box<T> {
+    fn outer_frame(&self) -> Visual {
+        self.as_ref().outer_frame()
     }
 }
 
@@ -99,7 +136,6 @@ impl Clone for Box<dyn ArcPanel> {
         self.clone_box()
     }
 }
-
 pub fn spawn_window_event_receiver(
     pool: impl Spawn,
     panel: impl Panel + 'static,
@@ -107,7 +143,7 @@ pub fn spawn_window_event_receiver(
 ) -> crate::Result<Sender<WindowEvent<'static>>> {
     let (tx_event_channel, mut rx_event_channel) = channel::<WindowEvent<'static>>(1024 * 64);
     let panel = panel;
-    panel.attach(container.clone())?;
+    attach(&container, &panel)?;
     pool.spawn(async_handle_err(async move {
         while let Some(event) = rx_event_channel.next().await {
             let panel_event = event.into();

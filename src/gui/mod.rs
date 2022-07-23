@@ -14,7 +14,7 @@ pub use button::{
     Button, ButtonEvent, ButtonParams, ButtonSkin, SimpleButtonSkin, SimpleButtonSkinParams,
 };
 pub use layer_stack::{LayerStack, LayerStackParams};
-pub use panel::{spawn_window_event_receiver, ArcPanel, Panel, PanelEvent};
+pub use panel::{spawn_window_event_receiver, ArcPanel, Panel, PanelEvent, attach, detach};
 pub use ribbon::{CellLimit, Ribbon, RibbonOrientation, RibbonParams};
 pub use text::{Text, TextParams};
 

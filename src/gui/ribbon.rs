@@ -1,11 +1,11 @@
-use super::{is_translated_point_in_box, ArcPanel, EventSink, EventSource, Panel, PanelEvent};
+use super::{is_translated_point_in_box, ArcPanel, EventSink, EventSource, Panel, PanelEvent, attach};
 use async_event_streams::{EventBox, EventStream, EventStreams};
 use async_std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use typed_builder::TypedBuilder;
 use windows::{
     Foundation::Numerics::{Vector2, Vector3},
-    UI::Composition::{Compositor, ContainerVisual},
+    UI::Composition::{Compositor, ContainerVisual, Visual},
 };
 use winit::event::{ElementState, MouseButton};
 
@@ -68,7 +68,7 @@ impl Cell {
     fn new(panel: impl ArcPanel, compositor: &Compositor, limit: CellLimit) -> crate::Result<Self> {
         let panel = panel;
         let container = compositor.CreateContainerVisual()?;
-        panel.attach(container.clone())?;
+        attach(&container, &panel)?;
         Ok(Self {
             panel: panel.clone_box(),
             container,
@@ -147,9 +147,7 @@ impl RibbonParams {
     pub fn create(self) -> crate::Result<Arc<Ribbon>> {
         let ribbon_container = self.compositor.CreateContainerVisual()?;
         for cell in &self.cells {
-            ribbon_container
-                .Children()?
-                .InsertAtTop(&cell.container)?;
+            ribbon_container.Children()?.InsertAtTop(&cell.container)?;
         }
         // ribbon_container.SetComment(HSTRING::from("RIBBON_CONTAINER"))?;
         let core = RwLock::new(Core {
@@ -169,7 +167,9 @@ impl RibbonParams {
 impl Ribbon {
     pub async fn add_panel(&self, panel: impl ArcPanel, limit: CellLimit) -> crate::Result<()> {
         let cell = Cell::new(panel, &self.compositor, limit)?;
-        self.ribbon_container.Children()?.InsertAtTop(&cell.container)?;
+        self.ribbon_container
+            .Children()?
+            .InsertAtTop(&cell.container)?;
         self.core.write().await.cells.push(cell);
         self.resize_cells(self.ribbon_container.Size()?).await?;
         Ok(())
@@ -222,17 +222,8 @@ impl Ribbon {
 }
 
 impl Panel for Ribbon {
-    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
-        container
-            .Children()?
-            .InsertAtTop(&self.ribbon_container)?;
-        Ok(())
-    }
-    fn detach(&self) -> crate::Result<()> {
-        if let Ok(parent) = self.ribbon_container.Parent() {
-            parent.Children()?.Remove(&self.ribbon_container)?;
-        }
-        Ok(())
+    fn outer_frame(&self) -> Visual {
+        self.ribbon_container.clone().into()
     }
 }
 
