@@ -25,6 +25,7 @@ features = [
   "UI_Composition_Desktop",
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
+  "Win32_Graphics_DirectWrite",
   "Win32_System_LibraryLoader",
   "Win32_System_WinRT",
   "Win32_UI_WindowsAndMessaging",

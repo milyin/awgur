@@ -1,48 +1,24 @@
-use async_event_streams::EventStreams;
-use async_std::sync::RwLock;
-use typed_builder::TypedBuilder;
-use windows::UI::{Composition::{
-    CompositionDrawingSurface, Compositor, ContainerVisual, SpriteVisual,
-}, Colors};
+use std::sync::Arc;
 
-use super::PanelEvent;
+use async_event_streams::{EventBox, EventStream, EventStreams};
+use async_std::sync::RwLock;
+use async_trait::async_trait;
+use typed_builder::TypedBuilder;
+use windows::{
+    Foundation::Numerics::Vector2,
+    UI::Composition::{Compositor, ContainerVisual},
+};
+
+use super::{EventSink, EventSource, Panel, PanelEvent};
 
 struct Core {
-    compositor: Compositor,
-    surface: Option<CompositionDrawingSurface>,
-    visual: SpriteVisual,
+    _compositor: Compositor,
+    _text: String,
 }
 
 impl Core {
-    fn redraw_text(&self) -> crate::Result<()> {
-        if let Some(ref surface) = self.surface {
-            let ds = CanvasComposition::CreateDrawingSession(surface)?;
-            ds.Clear(Colors::Transparent()?)?;
-
-            let size = surface.Size()?;
-            let text_format = CanvasTextFormat::new()?;
-            text_format.SetFontFamily("Arial")?;
-            text_format.SetFontSize(size.Height / self.params.font_scale)?;
-            let text: String = self.params.text.clone().into();
-            let text_layout = CanvasTextLayout::Create(
-                canvas_device(),
-                text,
-                text_format,
-                size.Width,
-                size.Height,
-            )?;
-            text_layout.SetVerticalAlignment(CanvasVerticalAlignment::Center)?;
-            text_layout.SetHorizontalAlignment(CanvasHorizontalAlignment::Center)?;
-            let color = if self.params.enabled {
-                self.params.color.clone()
-            } else {
-                Colors::Gray()?
-            };
-
-            ds.DrawTextLayoutAtCoordsWithColor(text_layout, 0., 0., color)
-        } else {
-            Ok(())
-        }
+    fn resize(&mut self, _size: Vector2) -> crate::Result<()> {
+        Ok(())
     }
 }
 
@@ -54,9 +30,58 @@ pub struct Text {
 
 impl Text {}
 
+#[async_trait]
+impl EventSink<PanelEvent> for Text {
+    async fn on_event(
+        &self,
+        event: PanelEvent,
+        source: Option<Arc<EventBox>>,
+    ) -> crate::Result<()> {
+        if let PanelEvent::Resized(size) = &event {
+            self.core.write().await.resize(*size)?;
+        }
+        self.panel_events.send_event(event, source).await;
+        Ok(())
+    }
+}
+
+impl EventSource<PanelEvent> for Text {
+    fn event_stream(&self) -> EventStream<PanelEvent> {
+        self.panel_events.create_event_stream()
+    }
+}
+
+#[async_trait]
+impl Panel for Text {
+    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
+        container.Children()?.InsertAtTop(&self.container)?;
+        Ok(())
+    }
+    fn detach(&self) -> crate::Result<()> {
+        if let Ok(parent) = self.container.Parent() {
+            parent.Children()?.Remove(&self.container)?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(TypedBuilder)]
 pub struct TextParams {
+    compositor: Compositor,
     text: String,
+}
+
+impl TextParams {
+    pub fn create(self) -> crate::Result<Arc<Text>> {
+        Ok(Arc::new(Text {
+            container: self.compositor.CreateContainerVisual()?,
+            core: RwLock::new(Core {
+                _compositor: self.compositor,
+                _text: self.text,
+            }),
+            panel_events: EventStreams::new(),
+        }))
+    }
 }
 
 /*
