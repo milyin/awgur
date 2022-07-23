@@ -124,7 +124,7 @@ impl EventSink<PanelEvent> for Button {
 
 impl Panel for Button {
     fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
-        container.Children()?.InsertAtTop(self.container.clone())?;
+        container.Children()?.InsertAtTop(&self.container)?;
         Ok(())
     }
     fn detach(&self) -> crate::Result<()> {

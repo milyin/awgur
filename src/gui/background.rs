@@ -41,10 +41,10 @@ impl Core {
             rect_geometry.SetCornerRadius(Vector2 { X: 0., Y: 0. })?;
         }
         let brush = compositor.CreateColorBrushWithColor(color)?;
-        let rect = compositor.CreateSpriteShapeWithGeometry(rect_geometry)?;
-        rect.SetFillBrush(brush)?;
+        let rect = compositor.CreateSpriteShapeWithGeometry(&rect_geometry)?;
+        rect.SetFillBrush(&brush)?;
         rect.SetOffset(Vector2 { X: 0., Y: 0. })?;
-        container_shape.Shapes()?.Append(rect)?;
+        container_shape.Shapes()?.Append(&rect)?;
         let shape = container_shape.into();
         Ok(shape)
     }
@@ -52,7 +52,7 @@ impl Core {
         self.container.Shapes()?.Clear()?;
         self.container
             .Shapes()?
-            .Append(Self::create_background_shape(
+            .Append(&Self::create_background_shape(
                 &self.compositor,
                 self.container.Size()?,
                 self.round_corners,
@@ -115,7 +115,7 @@ impl Background {
 #[async_trait]
 impl Panel for Background {
     fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
-        container.Children()?.InsertAtTop(self.container.clone())?;
+        container.Children()?.InsertAtTop(&self.container)?;
         Ok(())
     }
     fn detach(&self) -> crate::Result<()> {

@@ -113,7 +113,7 @@ pub fn spawn_window_event_receiver(
             let panel_event = event.into();
             match &panel_event {
                 // TODO: handle quit here
-                PanelEvent::Resized(size) => container.SetSize(size)?,
+                PanelEvent::Resized(size) => container.SetSize(*size)?,
                 _ => (),
             };
             panel.on_event(panel_event, None).await?;

@@ -56,7 +56,7 @@ impl Window {
 
     pub fn open(self) -> crate::Result<Box<Self>> {
         let class_name = WINDOW_CLASS_NAME.to_wide();
-        let h_instance = unsafe { GetModuleHandleW(PCWSTR::default())? };
+        let h_instance = unsafe { GetModuleHandleW(PCWSTR::null())? };
         let h_cursor = unsafe { LoadCursorW(HINSTANCE::default(), IDC_ARROW)? };
         REGISTER_WINDOW_CLASS.call_once(|| {
             let class = WNDCLASSW {
@@ -110,10 +110,10 @@ impl Window {
         let compositor_desktop: ICompositorDesktopInterop = result.compositor.cast()?;
         let target =
             unsafe { compositor_desktop.CreateDesktopWindowTarget(result.handle(), true)? };
-        target.SetRoot(result.root_visual.clone())?;
+        target.SetRoot(&result.root_visual)?;
         result.target = Some(target);
 
-        unsafe { ShowWindow(&window, SW_SHOW) };
+        unsafe { ShowWindow(window, SW_SHOW) };
         Ok(result)
     }
 

@@ -119,12 +119,12 @@ impl LayerStackParams {
 
 impl Panel for LayerStack {
     fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
-        container.Children()?.InsertAtTop(self.container.clone())?;
+        container.Children()?.InsertAtTop(&self.container)?;
         Ok(())
     }
     fn detach(&self) -> crate::Result<()> {
         if let Ok(parent) = self.container.Parent() {
-            parent.Children()?.Remove(&self.container.clone())?;
+            parent.Children()?.Remove(&self.container)?;
         }
         Ok(())
     }

@@ -86,7 +86,7 @@ impl Cell {
         Ok(is_translated_point_in_box(point, size))
     }
     fn resize(&mut self, offset: Vector2, size: Vector2) -> crate::Result<()> {
-        self.container.SetOffset(&Vector3 {
+        self.container.SetOffset(Vector3 {
             X: offset.X,
             Y: offset.Y,
             Z: 0.,
@@ -149,7 +149,7 @@ impl RibbonParams {
         for cell in &self.cells {
             ribbon_container
                 .Children()?
-                .InsertAtTop(cell.container.clone())?;
+                .InsertAtTop(&cell.container)?;
         }
         // ribbon_container.SetComment(HSTRING::from("RIBBON_CONTAINER"))?;
         let core = RwLock::new(Core {
@@ -169,9 +169,7 @@ impl RibbonParams {
 impl Ribbon {
     pub async fn add_panel(&self, panel: impl ArcPanel, limit: CellLimit) -> crate::Result<()> {
         let cell = Cell::new(panel, &self.compositor, limit)?;
-        self.ribbon_container
-            .Children()?
-            .InsertAtTop(cell.container.clone())?;
+        self.ribbon_container.Children()?.InsertAtTop(&cell.container)?;
         self.core.write().await.cells.push(cell);
         self.resize_cells(self.ribbon_container.Size()?).await?;
         Ok(())
@@ -227,7 +225,7 @@ impl Panel for Ribbon {
     fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
         container
             .Children()?
-            .InsertAtTop(self.ribbon_container.clone())?;
+            .InsertAtTop(&self.ribbon_container)?;
         Ok(())
     }
     fn detach(&self) -> crate::Result<()> {
