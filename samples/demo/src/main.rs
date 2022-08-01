@@ -37,6 +37,7 @@ fn main() -> wag::Result<()> {
     let button_skin = SimpleButtonSkinParams::builder()
         .compositor(compositor.clone())
         .color(Colors::Magenta()?)
+        .text("Rotate".to_owned())
         .build()
         .create()?;
     let button = ButtonParams::builder()

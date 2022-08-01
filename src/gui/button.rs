@@ -1,4 +1,4 @@
-use super::{attach, ArcPanel};
+use super::{attach, ArcPanel, TextParams};
 use super::{
     Background, BackgroundParams, EventSink, EventSource, LayerStack, LayerStackParams, Panel,
     PanelEvent,
@@ -137,6 +137,7 @@ pub trait ButtonSkin: ArcPanel + EventSink<ButtonEvent> {}
 
 pub struct SimpleButtonSkin {
     layer_stack: LayerStack,
+    // text: Arc<Text>,
     background: Arc<Background>,
     panel_events: EventStreams<PanelEvent>,
 }
@@ -144,6 +145,7 @@ pub struct SimpleButtonSkin {
 #[derive(TypedBuilder)]
 pub struct SimpleButtonSkinParams {
     compositor: Compositor,
+    text: String,
     color: Color,
 }
 
@@ -155,14 +157,21 @@ impl SimpleButtonSkinParams {
             .compositor(self.compositor.clone())
             .build()
             .create()?;
+        let text = TextParams::builder()
+            .compositor(self.compositor.clone())
+            .text(self.text)
+            .build()
+            .create()?;
         let layer_stack = LayerStackParams::builder()
-            .compositor(self.compositor)
+            .compositor(self.compositor.clone())
             .build()
             .push_panel(background.clone())
+            .push_panel(text.clone())
             .create()?;
         Ok(Arc::new(SimpleButtonSkin {
             layer_stack,
             background,
+            // text,
             panel_events: EventStreams::new(),
         }))
     }

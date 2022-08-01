@@ -5,25 +5,160 @@ use async_std::sync::RwLock;
 use async_trait::async_trait;
 use typed_builder::TypedBuilder;
 use windows::{
+    core::{InParam, Interface},
+    w,
     Foundation::Numerics::Vector2,
-    UI::Composition::{Compositor, ContainerVisual, Visual},
+    Graphics::{
+        DirectX::{DirectXAlphaMode, DirectXPixelFormat},
+        SizeInt32,
+    },
+    Win32::{
+        Foundation::HINSTANCE,
+        Graphics::{
+            Direct2D::{
+                D2D1CreateFactory, ID2D1Factory1, D2D1_FACTORY_OPTIONS,
+                D2D1_FACTORY_TYPE_SINGLE_THREADED,
+            },
+            Direct3D::{
+                D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_SOFTWARE,
+                D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL,
+            },
+            Direct3D11::{
+                D3D11CreateDevice, ID3D11Device, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                D3D11_SDK_VERSION,
+            },
+            DirectWrite::{
+                DWriteCreateFactory, IDWriteFactory, DWRITE_FACTORY_TYPE_SHARED,
+                DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_BOLD,
+                DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER,
+            },
+            Dxgi::IDXGIDevice,
+        },
+        System::WinRT::Composition::{ICompositionDrawingSurfaceInterop, ICompositorInterop},
+    },
+    UI::Composition::{
+        CompositionStretch, CompositionSurfaceBrush, Compositor, ICompositionSurface, SpriteVisual,
+        Visual,
+    },
 };
 
 use super::{EventSink, EventSource, Panel, PanelEvent};
 
-struct Core {
-    _compositor: Compositor,
-    _text: String,
+thread_local! {
+    static DWRITE_FACTORY: Result<IDWriteFactory, windows::core::Error> = create_dwrite_factory();
 }
 
+fn create_dwrite_factory() -> Result<IDWriteFactory, windows::core::Error> {
+    let dwrite_factory =
+        unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, &IDWriteFactory::IID) }?;
+    Ok(dwrite_factory.cast()?)
+}
+
+fn dwrite_factory() -> crate::Result<IDWriteFactory> {
+    DWRITE_FACTORY.with(|v| match v {
+        Ok(v) => Ok(v.clone()),
+        Err(e) => Err(crate::Error::Windows(e.clone())),
+    })
+}
+
+struct Core {
+    compositor: Compositor,
+    text: String,
+    surface_brush: CompositionSurfaceBrush,
+    sprite_visual: SpriteVisual,
+}
+
+fn create_device(driver_type: D3D_DRIVER_TYPE) -> crate::Result<ID3D11Device> {
+    let mut device: Option<ID3D11Device> = None;
+    unsafe {
+        D3D11CreateDevice(
+            InParam::null(),
+            driver_type,
+            HINSTANCE::default(),
+            D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+            &[],
+            D3D11_SDK_VERSION,
+            &mut device,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    }?;
+    Ok(device.unwrap())
+}
 impl Core {
-    fn resize(&mut self, _size: Vector2) -> crate::Result<()> {
+    fn new(
+        compositor: Compositor,
+        sprite_visual: SpriteVisual,
+        text: String,
+    ) -> crate::Result<Self> {
+        let surface_brush = compositor.CreateSurfaceBrush()?;
+        surface_brush.SetStretch(CompositionStretch::None)?;
+        surface_brush.SetHorizontalAlignmentRatio(0.)?;
+        surface_brush.SetVerticalAlignmentRatio(0.)?;
+        // surface_brush.SetTransformMatrix(Matrix3x2::translation(20., 20.))?;
+        sprite_visual.SetBrush(&surface_brush)?;
+        Ok(Self {
+            compositor,
+            text,
+            surface_brush,
+            sprite_visual,
+        })
+    }
+    fn resize(&mut self, size: Vector2) -> crate::Result<()> {
+        self.init(&size)?;
+        self.sprite_visual.SetSize(size)?;
+        Ok(())
+    }
+    fn init(&mut self, size: &Vector2) -> crate::Result<()> {
+        let options = D2D1_FACTORY_OPTIONS::default();
+        let factory: ID2D1Factory1 =
+            unsafe { D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &options) }?;
+        let device = create_device(D3D_DRIVER_TYPE_HARDWARE);
+        let device = if device.is_ok() {
+            device
+        } else {
+            create_device(D3D_DRIVER_TYPE_WARP)
+        };
+        let dxdevice: IDXGIDevice = device?.cast()?;
+        let interop_compositor: ICompositorInterop = self.compositor.cast()?;
+        let d2device = unsafe { factory.CreateDevice(&dxdevice) }?;
+        let graphic_device = unsafe { interop_compositor.CreateGraphicsDevice(&d2device) }?;
+
+        let virtual_surface = graphic_device.CreateVirtualDrawingSurface(
+            SizeInt32 {
+                Width: size.X as i32,
+                Height: size.Y as i32,
+            },
+            DirectXPixelFormat::B8G8R8A8UIntNormalized,
+            DirectXAlphaMode::Premultiplied,
+        )?;
+
+        let surface_interop: ICompositionDrawingSurfaceInterop = virtual_surface.cast()?;
+
+        let surface: ICompositionSurface = surface_interop.cast()?;
+
+        self.surface_brush.SetSurface(&surface)?;
+
+        let dwrite_text_format = unsafe {
+            dwrite_factory()?.CreateTextFormat(
+                w!("Segoe UI"),
+                InParam::null(),
+                DWRITE_FONT_WEIGHT_BOLD,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                60.,
+                w!("en-US"),
+            )
+        }?;
+        unsafe { dwrite_text_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER) }?;
+        unsafe { dwrite_text_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER) }?;
+
         Ok(())
     }
 }
 
 pub struct Text {
-    container: ContainerVisual,
+    visual: Visual,
     core: RwLock<Core>,
     panel_events: EventStreams<PanelEvent>,
 }
@@ -54,7 +189,7 @@ impl EventSource<PanelEvent> for Text {
 #[async_trait]
 impl Panel for Text {
     fn outer_frame(&self) -> Visual {
-        self.container.clone().into()
+        self.visual.clone()
     }
 }
 
@@ -66,12 +201,12 @@ pub struct TextParams {
 
 impl TextParams {
     pub fn create(self) -> crate::Result<Arc<Text>> {
+        let sprite_visual = self.compositor.CreateSpriteVisual()?;
+        let visual = sprite_visual.clone().into();
+        let core = RwLock::new(Core::new(self.compositor, sprite_visual, self.text)?);
         Ok(Arc::new(Text {
-            container: self.compositor.CreateContainerVisual()?,
-            core: RwLock::new(Core {
-                _compositor: self.compositor,
-                _text: self.text,
-            }),
+            visual,
+            core,
             panel_events: EventStreams::new(),
         }))
     }
