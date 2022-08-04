@@ -13,112 +13,21 @@ use windows::{
         SizeInt32,
     },
     Win32::{
-        Foundation::HINSTANCE,
-        Graphics::{
-            Direct2D::{
-                D2D1CreateFactory, ID2D1Device, ID2D1Factory1, D2D1_FACTORY_OPTIONS,
-                D2D1_FACTORY_TYPE_SINGLE_THREADED,
-            },
-            Direct3D::{D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP},
-            Direct3D11::{
-                D3D11CreateDevice, ID3D11Device, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-                D3D11_SDK_VERSION,
-            },
-            DirectWrite::{
-                DWriteCreateFactory, IDWriteFactory, DWRITE_FACTORY_TYPE_SHARED,
-                DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_BOLD,
-                DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER,
-            },
-            Dxgi::IDXGIDevice,
+        Graphics::DirectWrite::{
+            DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_BOLD,
+            DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER,
         },
-        System::WinRT::Composition::{ICompositionDrawingSurfaceInterop, ICompositorInterop},
+        System::WinRT::Composition::ICompositionDrawingSurfaceInterop,
     },
     UI::Composition::{
-        CompositionGraphicsDevice, CompositionStretch, CompositionSurfaceBrush, Compositor,
-        ICompositionSurface, SpriteVisual, Visual,
+        CompositionStretch, CompositionSurfaceBrush, Compositor, ICompositionSurface, SpriteVisual,
+        Visual,
     },
 };
 
+use crate::window::{composition_graphics_device, dwrite_factory};
+
 use super::{EventSink, EventSource, Panel, PanelEvent};
-
-thread_local! {
-    static DWRITE_FACTORY: Result<IDWriteFactory, windows::core::Error> = create_dwrite_factory();
-    static D3D11_DEVICE: Result<ID3D11Device, windows::core::Error> = create_d3d11_device();
-    static D2D1_DEVICE: Result<windows::Win32::Graphics::Direct2D::ID2D1Device, windows::core::Error> = create_d2d1_device();
-}
-
-fn create_dwrite_factory() -> Result<IDWriteFactory, windows::core::Error> {
-    let dwrite_factory =
-        unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, &IDWriteFactory::IID) }?;
-    Ok(dwrite_factory.cast()?)
-}
-
-fn dwrite_factory() -> crate::Result<IDWriteFactory> {
-    DWRITE_FACTORY.with(|v| match v {
-        Ok(v) => Ok(v.clone()),
-        Err(e) => Err(crate::Error::Windows(e.clone())),
-    })
-}
-
-fn create_d3d11_device() -> Result<ID3D11Device, windows::core::Error> {
-    fn create_device(driver_type: D3D_DRIVER_TYPE) -> Result<ID3D11Device, windows::core::Error> {
-        let mut device: Option<ID3D11Device> = None;
-        unsafe {
-            D3D11CreateDevice(
-                InParam::null(),
-                driver_type,
-                HINSTANCE::default(),
-                D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-                &[],
-                D3D11_SDK_VERSION,
-                &mut device,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-            )
-        }?;
-        Ok(device.unwrap())
-    }
-
-    let device = create_device(D3D_DRIVER_TYPE_HARDWARE);
-    let device = if device.is_ok() {
-        device
-    } else {
-        create_device(D3D_DRIVER_TYPE_WARP)
-    };
-    device
-}
-
-fn d3d11_device() -> crate::Result<ID3D11Device> {
-    D3D11_DEVICE.with(|v| match v {
-        Ok(v) => Ok(v.clone()),
-        Err(e) => Err(crate::Error::Windows(e.clone())),
-    })
-}
-
-fn create_d2d1_device() -> Result<ID2D1Device, windows::core::Error> {
-    let dxdevice: IDXGIDevice = D3D11_DEVICE.with(|v| v.clone())?.cast()?;
-    let options = D2D1_FACTORY_OPTIONS::default();
-    let factory: ID2D1Factory1 =
-        unsafe { D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &options) }?;
-    let d2device = unsafe { factory.CreateDevice(&dxdevice) }?;
-    Ok(d2device)
-}
-
-fn d2d1_device() -> crate::Result<ID2D1Device> {
-    D2D1_DEVICE.with(|v| match v {
-        Ok(v) => Ok(v.clone()),
-        Err(e) => Err(crate::Error::Windows(e.clone())),
-    })
-}
-
-fn composition_graphics_device(
-    compositor: &Compositor,
-) -> crate::Result<CompositionGraphicsDevice> {
-    let interop_compositor: ICompositorInterop = compositor.cast()?;
-    let d2device = d2d1_device()?;
-    let graphic_device = unsafe { interop_compositor.CreateGraphicsDevice(&d2device) }?;
-    Ok(graphic_device)
-}
 
 struct Core {
     compositor: Compositor,
