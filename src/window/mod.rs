@@ -11,7 +11,7 @@ pub use interop::create_dispatcher_queue_controller;
 pub use interop::create_dispatcher_queue_controller_for_current_thread;
 pub use interop::{
     composition_graphics_device, create_d2d1_device, create_d3d11_device, create_dwrite_factory,
-    d2d1_device, d3d11_device, dwrite_factory,
+    d2d1_device, d3d11_device, dwrite_factory, check_for_device_removed
 };
 use windows::System::DispatcherQueueController;
 use windows::Win32::System::WinRT::RoInitialize;

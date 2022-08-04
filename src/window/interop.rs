@@ -1,11 +1,6 @@
 use windows::{
     core::{InParam, Interface},
     System::DispatcherQueueController,
-    Win32::System::WinRT::{
-        CreateDispatcherQueueController, DispatcherQueueOptions,
-        DISPATCHERQUEUE_THREAD_APARTMENTTYPE, DISPATCHERQUEUE_THREAD_TYPE, DQTAT_COM_NONE,
-        DQTYPE_THREAD_CURRENT,
-    },
     Win32::{
         Foundation::HINSTANCE,
         Graphics::{
@@ -22,6 +17,14 @@ use windows::{
             Dxgi::IDXGIDevice,
         },
         System::WinRT::Composition::ICompositorInterop,
+    },
+    Win32::{
+        Graphics::Dxgi::{DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET},
+        System::WinRT::{
+            CreateDispatcherQueueController, DispatcherQueueOptions,
+            DISPATCHERQUEUE_THREAD_APARTMENTTYPE, DISPATCHERQUEUE_THREAD_TYPE, DQTAT_COM_NONE,
+            DQTYPE_THREAD_CURRENT,
+        },
     },
     UI::Composition::{CompositionGraphicsDevice, Compositor},
 };
@@ -111,4 +114,20 @@ pub fn composition_graphics_device(
     let d2device = d2d1_device()?;
     let graphic_device = unsafe { interop_compositor.CreateGraphicsDevice(&d2device) }?;
     Ok(graphic_device)
+}
+
+//
+// TODO: Actually handle the device reset situation
+//
+pub fn check_for_device_removed<T>(
+    result: windows::core::Result<T>,
+) -> windows::core::Result<Option<T>> {
+    match result {
+        Err(ref e)
+            if e.code() == DXGI_ERROR_DEVICE_REMOVED || e.code() == DXGI_ERROR_DEVICE_RESET =>
+        {
+            Ok(None)
+        }
+        _ => result.map(|v| Some(v)),
+    }
 }

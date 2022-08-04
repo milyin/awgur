@@ -13,25 +13,30 @@ use windows::{
         SizeInt32,
     },
     Win32::{
-        Graphics::DirectWrite::{
-            DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_BOLD,
-            DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER,
+        Foundation::{POINT, RECT},
+        Graphics::{
+            Direct2D::ID2D1DeviceContext,
+            DirectWrite::{
+                DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_BOLD,
+                DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER,
+            },
         },
         System::WinRT::Composition::ICompositionDrawingSurfaceInterop,
     },
     UI::Composition::{
-        CompositionStretch, CompositionSurfaceBrush, Compositor, ICompositionSurface, SpriteVisual,
-        Visual,
+        CompositionStretch, CompositionSurfaceBrush, CompositionVirtualDrawingSurface, Compositor,
+        ICompositionSurface, SpriteVisual, Visual,
     },
 };
 
-use crate::window::{composition_graphics_device, dwrite_factory};
+use crate::window::{check_for_device_removed, composition_graphics_device, dwrite_factory};
 
 use super::{EventSink, EventSource, Panel, PanelEvent};
 
 struct Core {
     compositor: Compositor,
     text: String,
+    surface: CompositionVirtualDrawingSurface,
     surface_brush: CompositionSurfaceBrush,
     sprite_visual: SpriteVisual,
 }
@@ -42,6 +47,7 @@ impl Core {
         sprite_visual: SpriteVisual,
         text: String,
     ) -> crate::Result<Self> {
+        let surface = Self::create_surface(&compositor, &sprite_visual.Size()?)?;
         let surface_brush = compositor.CreateSurfaceBrush()?;
         surface_brush.SetStretch(CompositionStretch::None)?;
         surface_brush.SetHorizontalAlignmentRatio(0.)?;
@@ -51,17 +57,21 @@ impl Core {
         Ok(Self {
             compositor,
             text,
+            surface,
             surface_brush,
             sprite_visual,
         })
     }
     fn resize(&mut self, size: Vector2) -> crate::Result<()> {
         self.init(&size)?;
-        self.sprite_visual.SetSize(size)?;
+        self.redraw()?;
         Ok(())
     }
-    fn init(&mut self, size: &Vector2) -> crate::Result<()> {
-        let graphic_device = composition_graphics_device(&self.compositor)?;
+    fn create_surface(
+        compositor: &Compositor,
+        size: &Vector2,
+    ) -> crate::Result<CompositionVirtualDrawingSurface> {
+        let graphic_device = composition_graphics_device(compositor)?;
         let virtual_surface = graphic_device.CreateVirtualDrawingSurface(
             SizeInt32 {
                 Width: size.X as i32,
@@ -70,13 +80,16 @@ impl Core {
             DirectXPixelFormat::B8G8R8A8UIntNormalized,
             DirectXAlphaMode::Premultiplied,
         )?;
-
-        let surface_interop: ICompositionDrawingSurfaceInterop = virtual_surface.cast()?;
-
-        let surface: ICompositionSurface = surface_interop.cast()?;
-
+        Ok(virtual_surface)
+    }
+    fn surface_interop(&self) -> crate::Result<ICompositionDrawingSurfaceInterop> {
+        Ok(self.surface.cast()?)
+    }
+    fn init(&mut self, size: &Vector2) -> crate::Result<()> {
+        self.sprite_visual.SetSize(*size)?;
+        self.surface = Self::create_surface(&self.compositor, size)?;
+        let surface: ICompositionSurface = self.surface_interop()?.cast()?;
         self.surface_brush.SetSurface(&surface)?;
-
         let dwrite_text_format = unsafe {
             dwrite_factory()?.CreateTextFormat(
                 w!("Segoe UI"),
@@ -91,6 +104,28 @@ impl Core {
         unsafe { dwrite_text_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER) }?;
         unsafe { dwrite_text_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER) }?;
 
+        Ok(())
+    }
+    fn redraw(&self) -> crate::Result<()> {
+        let size = self.sprite_visual.Size()?;
+        let updaterect = RECT {
+            left: 0,
+            top: 0,
+            right: size.X as i32,
+            bottom: size.Y as i32,
+        };
+        let mut updateoffset = POINT { x: 0, y: 0 };
+
+        let surface_interop = self.surface_interop()?;
+
+        let context: Option<ID2D1DeviceContext> = check_for_device_removed(unsafe {
+            surface_interop.BeginDraw(&updaterect, &mut updateoffset)
+        })?;
+
+        if let Some(context) = context {
+            unsafe { surface_interop.EndDraw() }?;
+        }
+        // let d2d_device_context =
         Ok(())
     }
 }
