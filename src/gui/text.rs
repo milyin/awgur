@@ -7,16 +7,21 @@ use typed_builder::TypedBuilder;
 use windows::{
     core::{InParam, Interface},
     w,
-    Foundation::Numerics::Vector2,
+    Foundation::Numerics::{Matrix3x2, Vector2},
     Graphics::DirectX::{DirectXAlphaMode, DirectXPixelFormat},
     Win32::{
         Foundation::POINT,
         Graphics::{
-            Direct2D::{Common::D2D1_COLOR_F, ID2D1DeviceContext},
+            Direct2D::{
+                Common::{D2D1_COLOR_F, D2D_POINT_2F},
+                ID2D1DeviceContext, D2D1_BRUSH_PROPERTIES, D2D1_DRAW_TEXT_OPTIONS,
+                D2D1_DRAW_TEXT_OPTIONS_NONE,
+            },
             DirectWrite::{
                 DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_BOLD,
                 DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER,
             },
+            Gdi::CreateSolidBrush,
         },
         System::WinRT::Composition::ICompositionDrawingSurfaceInterop,
     },
@@ -26,13 +31,15 @@ use windows::{
     },
 };
 
-use crate::window::{check_for_device_removed, create_composition_graphics_device, dwrite_factory};
+use crate::window::{
+    check_for_device_removed, create_composition_graphics_device, dwrite_factory, ToWide,
+};
 
 use super::{EventSink, EventSource, Panel, PanelEvent};
 
 struct Core {
     composition_graphic_device: CompositionGraphicsDevice,
-    _text: String,
+    text: String,
     surface_brush: CompositionSurfaceBrush,
     sprite_visual: SpriteVisual,
 }
@@ -54,7 +61,7 @@ impl Core {
         sprite_visual.SetBrush(&surface_brush)?;
         Ok(Self {
             composition_graphic_device,
-            _text: text,
+            text,
             surface_brush,
             sprite_visual,
         })
@@ -87,6 +94,14 @@ impl Core {
         }?;
         unsafe { dwrite_text_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER) }?;
         unsafe { dwrite_text_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER) }?;
+        let text_layout = unsafe {
+            dwrite_factory()?.CreateTextLayout(
+                self.text.as_str().to_wide().0.as_slice(),
+                &dwrite_text_format,
+                size.X,
+                size.Y,
+            )
+        }?;
 
         let mut updateoffset = POINT { x: 0, y: 0 };
         let surface_interop: ICompositionDrawingSurfaceInterop = surface.cast()?;
@@ -100,8 +115,28 @@ impl Core {
                 b: 0.,
                 a: 1.,
             };
+            let text_color = D2D1_COLOR_F {
+                r: 0.,
+                g: 0.,
+                b: 0.,
+                a: 255.,
+            };
+            let text_brush_properties = D2D1_BRUSH_PROPERTIES {
+                opacity: 1.,
+                transform: Matrix3x2::identity(),
+            };
             unsafe { context.Clear(&clearcolor) };
-            //unsafe { context.Flush(std::ptr::null_mut(), std::ptr::null_mut()) }?;
+            let text_brush =
+                unsafe { context.CreateSolidColorBrush(&text_color, &text_brush_properties) }?;
+            unsafe {
+                context.DrawTextLayout(
+                    D2D_POINT_2F { x: 0., y: 0. },
+                    &text_layout,
+                    &text_brush,
+                    D2D1_DRAW_TEXT_OPTIONS_NONE,
+                )
+            };
+
             unsafe { surface_interop.EndDraw() }?;
         }
         Ok(())

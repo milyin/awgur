@@ -14,6 +14,7 @@ pub use graphics::{
 };
 pub use interop::create_dispatcher_queue_controller;
 pub use interop::create_dispatcher_queue_controller_for_current_thread;
+pub use wide_string::{ToWide, WideString};
 use windows::System::DispatcherQueueController;
 use windows::Win32::System::WinRT::RoInitialize;
 use windows::Win32::System::WinRT::RoUninitialize;
