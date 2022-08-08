@@ -8,14 +8,11 @@ use windows::{
     core::{InParam, Interface},
     w,
     Foundation::Numerics::Vector2,
-    Graphics::{
-        DirectX::{DirectXAlphaMode, DirectXPixelFormat},
-        SizeInt32,
-    },
+    Graphics::DirectX::{DirectXAlphaMode, DirectXPixelFormat},
     Win32::{
-        Foundation::{POINT, RECT},
+        Foundation::POINT,
         Graphics::{
-            Direct2D::ID2D1DeviceContext,
+            Direct2D::{Common::D2D1_COLOR_F, ID2D1DeviceContext},
             DirectWrite::{
                 DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_BOLD,
                 DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER,
@@ -24,19 +21,18 @@ use windows::{
         System::WinRT::Composition::ICompositionDrawingSurfaceInterop,
     },
     UI::Composition::{
-        CompositionStretch, CompositionSurfaceBrush, CompositionVirtualDrawingSurface, Compositor,
-        ICompositionSurface, SpriteVisual, Visual,
+        CompositionGraphicsDevice, CompositionStretch, CompositionSurfaceBrush, Compositor,
+        SpriteVisual, Visual,
     },
 };
 
-use crate::window::{check_for_device_removed, composition_graphics_device, dwrite_factory};
+use crate::window::{check_for_device_removed, create_composition_graphics_device, dwrite_factory};
 
 use super::{EventSink, EventSource, Panel, PanelEvent};
 
 struct Core {
-    compositor: Compositor,
-    text: String,
-    surface: CompositionVirtualDrawingSurface,
+    composition_graphic_device: CompositionGraphicsDevice,
+    _text: String,
     surface_brush: CompositionSurfaceBrush,
     sprite_visual: SpriteVisual,
 }
@@ -47,48 +43,36 @@ impl Core {
         sprite_visual: SpriteVisual,
         text: String,
     ) -> crate::Result<Self> {
-        let surface = Self::create_surface(&compositor, &sprite_visual.Size()?)?;
+        let composition_graphic_device = create_composition_graphics_device(&compositor)?;
         let surface_brush = compositor.CreateSurfaceBrush()?;
         surface_brush.SetStretch(CompositionStretch::None)?;
         surface_brush.SetHorizontalAlignmentRatio(0.)?;
         surface_brush.SetVerticalAlignmentRatio(0.)?;
-        // surface_brush.SetTransformMatrix(Matrix3x2::translation(20., 20.))?;
+        // surface_brush.SetTransformMatrix(windows::Foundation::Numerics::Matrix3x2::translation(
+        //     20., 20.,
+        // ))?;
         sprite_visual.SetBrush(&surface_brush)?;
         Ok(Self {
-            compositor,
-            text,
-            surface,
+            composition_graphic_device,
+            _text: text,
             surface_brush,
             sprite_visual,
         })
     }
     fn resize(&mut self, size: Vector2) -> crate::Result<()> {
-        self.init(&size)?;
-        self.redraw()?;
+        self.redraw(&size)?;
+        self.sprite_visual.SetSize(size)?;
         Ok(())
     }
-    fn create_surface(
-        compositor: &Compositor,
-        size: &Vector2,
-    ) -> crate::Result<CompositionVirtualDrawingSurface> {
-        let graphic_device = composition_graphics_device(compositor)?;
-        let virtual_surface = graphic_device.CreateVirtualDrawingSurface(
-            SizeInt32 {
-                Width: size.X as i32,
-                Height: size.Y as i32,
+    fn redraw(&mut self, size: &Vector2) -> crate::Result<()> {
+        let surface = self.composition_graphic_device.CreateDrawingSurface(
+            windows::Foundation::Size {
+                Width: size.X,
+                Height: size.Y,
             },
             DirectXPixelFormat::B8G8R8A8UIntNormalized,
             DirectXAlphaMode::Premultiplied,
         )?;
-        Ok(virtual_surface)
-    }
-    fn surface_interop(&self) -> crate::Result<ICompositionDrawingSurfaceInterop> {
-        Ok(self.surface.cast()?)
-    }
-    fn init(&mut self, size: &Vector2) -> crate::Result<()> {
-        self.sprite_visual.SetSize(*size)?;
-        self.surface = Self::create_surface(&self.compositor, size)?;
-        let surface: ICompositionSurface = self.surface_interop()?.cast()?;
         self.surface_brush.SetSurface(&surface)?;
         let dwrite_text_format = unsafe {
             dwrite_factory()?.CreateTextFormat(
@@ -104,28 +88,22 @@ impl Core {
         unsafe { dwrite_text_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER) }?;
         unsafe { dwrite_text_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER) }?;
 
-        Ok(())
-    }
-    fn redraw(&self) -> crate::Result<()> {
-        let size = self.sprite_visual.Size()?;
-        let updaterect = RECT {
-            left: 0,
-            top: 0,
-            right: size.X as i32,
-            bottom: size.Y as i32,
-        };
         let mut updateoffset = POINT { x: 0, y: 0 };
-
-        let surface_interop = self.surface_interop()?;
-
+        let surface_interop: ICompositionDrawingSurfaceInterop = surface.cast()?;
         let context: Option<ID2D1DeviceContext> = check_for_device_removed(unsafe {
-            surface_interop.BeginDraw(&updaterect, &mut updateoffset)
+            surface_interop.BeginDraw(std::ptr::null(), &mut updateoffset)
         })?;
-
         if let Some(context) = context {
+            let clearcolor = D2D1_COLOR_F {
+                r: 255.,
+                g: 127.,
+                b: 0.,
+                a: 1.,
+            };
+            unsafe { context.Clear(&clearcolor) };
+            //unsafe { context.Flush(std::ptr::null_mut(), std::ptr::null_mut()) }?;
             unsafe { surface_interop.EndDraw() }?;
         }
-        // let d2d_device_context =
         Ok(())
     }
 }
