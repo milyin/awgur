@@ -40,21 +40,31 @@ pub struct ButtonParams {
     skin: Box<dyn ButtonSkin>,
 }
 
-impl ButtonParams {
-    pub fn create(self) -> crate::Result<Arc<Button>> {
-        let container = self.compositor.CreateContainerVisual()?;
-        let skin = self.skin;
+impl TryFrom<ButtonParams> for Button {
+    type Error = crate::Error;
+
+    fn try_from(value: ButtonParams) -> crate::Result<Self> {
+        let container = value.compositor.CreateContainerVisual()?;
+        let skin = value.skin;
         attach(&container, &skin)?;
         let core = RwLock::new(Core {
             skin,
             pressed: false,
         });
-        Ok(Arc::new(Button {
+        Ok(Button {
             container,
             core,
             panel_events: EventStreams::new(),
             button_events: EventStreams::new(),
-        }))
+        })
+    }
+}
+
+impl TryFrom<ButtonParams> for Arc<Button> {
+    type Error = crate::Error;
+
+    fn try_from(value: ButtonParams) -> crate::Result<Self> {
+        Ok(Arc::new(value.try_into()?))
     }
 }
 
@@ -149,31 +159,40 @@ pub struct SimpleButtonSkinParams {
     color: Color,
 }
 
-impl SimpleButtonSkinParams {
-    pub fn create(self) -> crate::Result<Arc<SimpleButtonSkin>> {
-        let background = BackgroundParams::builder()
-            .color(self.color)
+impl TryFrom<SimpleButtonSkinParams> for SimpleButtonSkin {
+    type Error = crate::Error;
+    fn try_from(value: SimpleButtonSkinParams) -> crate::Result<Self> {
+        let background: Arc<Background> = BackgroundParams::builder()
+            .color(value.color)
             .round_corners(true)
-            .compositor(self.compositor.clone())
+            .compositor(value.compositor.clone())
             .build()
-            .create()?;
+            .try_into()?;
         let text = TextParams::builder()
-            .compositor(self.compositor.clone())
-            .text(self.text)
+            .compositor(value.compositor.clone())
+            .text(value.text)
             .build()
             .create()?;
         let layer_stack = LayerStackParams::builder()
-            .compositor(self.compositor.clone())
+            .compositor(value.compositor.clone())
             .build()
             .push_panel(background.clone())
             .push_panel(text.clone())
-            .create()?;
-        Ok(Arc::new(SimpleButtonSkin {
+            .try_into()?;
+        Ok(SimpleButtonSkin {
             layer_stack,
             background,
             // text,
             panel_events: EventStreams::new(),
-        }))
+        })
+    }
+}
+
+impl TryFrom<SimpleButtonSkinParams> for Arc<SimpleButtonSkin> {
+    type Error = crate::Error;
+
+    fn try_from(value: SimpleButtonSkinParams) -> crate::Result<Self> {
+        Ok(Arc::new(value.try_into()?))
     }
 }
 

@@ -1,4 +1,6 @@
-use super::{is_translated_point_in_box, ArcPanel, EventSink, EventSource, Panel, PanelEvent, attach};
+use super::{
+    attach, is_translated_point_in_box, ArcPanel, EventSink, EventSource, Panel, PanelEvent,
+};
 use async_event_streams::{EventBox, EventStream, EventStreams};
 use async_std::sync::{Arc, RwLock};
 use async_trait::async_trait;
@@ -144,23 +146,36 @@ impl RibbonParams {
         this.cells.push(Cell::new(panel, &this.compositor, limit)?);
         Ok(this)
     }
-    pub fn create(self) -> crate::Result<Arc<Ribbon>> {
-        let ribbon_container = self.compositor.CreateContainerVisual()?;
-        for cell in &self.cells {
+}
+
+impl TryFrom<RibbonParams> for Ribbon {
+    type Error = crate::Error;
+
+    fn try_from(value: RibbonParams) -> crate::Result<Self> {
+        let ribbon_container = value.compositor.CreateContainerVisual()?;
+        for cell in &value.cells {
             ribbon_container.Children()?.InsertAtTop(&cell.container)?;
         }
         // ribbon_container.SetComment(HSTRING::from("RIBBON_CONTAINER"))?;
         let core = RwLock::new(Core {
-            orientation: self.orientation,
-            cells: self.cells,
+            orientation: value.orientation,
+            cells: value.cells,
             mouse_pos: None,
         });
-        Ok(Arc::new(Ribbon {
-            compositor: self.compositor,
+        Ok(Ribbon {
+            compositor: value.compositor,
             ribbon_container,
             core,
             panel_events: EventStreams::new(),
-        }))
+        })
+    }
+}
+
+impl TryFrom<RibbonParams> for Arc<Ribbon> {
+    type Error = crate::Error;
+
+    fn try_from(value: RibbonParams) -> crate::Result<Self> {
+        Ok(Arc::new(value.try_into()?))
     }
 }
 

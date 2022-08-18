@@ -87,8 +87,18 @@ pub struct SurfaceParams {
     compositor: Compositor,
 }
 
-impl SurfaceParams {
-    pub fn create(self) -> crate::Result<Arc<Surface>> {
-        Ok(Arc::new(Surface::new(self.compositor)?))
+impl TryFrom<SurfaceParams> for Surface {
+    type Error = crate::Error;
+
+    fn try_from(value: SurfaceParams) -> crate::Result<Self> {
+        Ok(Surface::new(value.compositor)?)
+    }
+}
+
+impl TryFrom<SurfaceParams> for Arc<Surface> {
+    type Error = crate::Error;
+
+    fn try_from(value: SurfaceParams) -> crate::Result<Self> {
+        Ok(Arc::new(value.try_into()?))
     }
 }

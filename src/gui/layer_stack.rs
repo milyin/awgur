@@ -1,6 +1,6 @@
 use async_std::sync::{Arc, RwLock};
 
-use super::{attach, ArcPanel, EventSink, EventSource, Panel, PanelEvent, detach};
+use super::{attach, detach, ArcPanel, EventSink, EventSource, Panel, PanelEvent};
 use async_event_streams::{EventBox, EventStream, EventStreams};
 use async_trait::async_trait;
 
@@ -95,15 +95,19 @@ pub struct LayerStackParams {
     #[builder(default)]
     layers: Vec<Box<dyn ArcPanel>>,
 }
-
 impl LayerStackParams {
     pub fn push_panel(mut self, panel: impl ArcPanel) -> Self {
         self.layers.push(panel.clone_box());
         self
     }
-    pub fn create(self) -> crate::Result<LayerStack> {
-        let mut layers = self.layers;
-        let container = self.compositor.CreateContainerVisual()?;
+}
+
+impl TryFrom<LayerStackParams> for LayerStack {
+    type Error = crate::Error;
+
+    fn try_from(value: LayerStackParams) -> crate::Result<Self> {
+        let mut layers = value.layers;
+        let container = value.compositor.CreateContainerVisual()?;
         for layer in &mut layers {
             attach(&container, layer)?;
         }
@@ -114,6 +118,14 @@ impl LayerStackParams {
             core,
             panel_events: EventStreams::new(),
         })
+    }
+}
+
+impl TryFrom<LayerStackParams> for Arc<LayerStack> {
+    type Error = crate::Error;
+
+    fn try_from(value: LayerStackParams) -> crate::Result<Self> {
+        Ok(Arc::new(value.try_into()?))
     }
 }
 

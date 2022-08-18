@@ -5,8 +5,8 @@ use wag::{
     async_handle_err,
     gui::{
         spawn_window_event_receiver, Background, BackgroundParams, Button, ButtonEvent,
-        ButtonParams, CellLimit, EventSource, LayerStackParams, RibbonOrientation, RibbonParams,
-        SimpleButtonSkinParams,
+        ButtonParams, CellLimit, EventSource, LayerStack, LayerStackParams, Ribbon,
+        RibbonOrientation, RibbonParams, SimpleButtonSkin, SimpleButtonSkinParams,
     },
     window::{
         initialize_window_thread,
@@ -34,17 +34,17 @@ fn main() -> wag::Result<()> {
     //     CanvasComposition::CreateCompositionGraphicsDevice(&compositor, &canvas_device)?;
 
     let b = || -> wag::Result<Arc<Button>> {
-        let button_skin = SimpleButtonSkinParams::builder()
+        let button_skin: Arc<SimpleButtonSkin> = SimpleButtonSkinParams::builder()
             .compositor(compositor.clone())
             .color(Colors::Magenta()?)
             .text("Rotate".to_owned())
             .build()
-            .create()?;
+            .try_into()?;
         let button = ButtonParams::builder()
             .skin(button_skin)
             .compositor(compositor.clone())
             .build()
-            .create()?;
+            .try_into()?;
         Ok(button)
     };
 
@@ -55,19 +55,19 @@ fn main() -> wag::Result<()> {
         .color(Colors::Red()?)
         .round_corners(true)
         .build()
-        .create()?;
+        .try_into()?;
     let green_surface = BackgroundParams::builder()
         .compositor(compositor.clone())
         .color(Colors::Green()?)
         .round_corners(true)
         .build()
-        .create()?;
+        .try_into()?;
     let blue_surface = BackgroundParams::builder()
         .compositor(compositor.clone())
         .color(Colors::Blue()?)
         .round_corners(true)
         .build()
-        .create()?;
+        .try_into()?;
 
     async fn rotate_background_colors(
         a: &Weak<Background>,
@@ -107,7 +107,7 @@ fn main() -> wag::Result<()> {
         }
     }));
 
-    let hribbon = RibbonParams::builder()
+    let hribbon: Arc<Ribbon> = RibbonParams::builder()
         .compositor(compositor.clone())
         .orientation(RibbonOrientation::Horizontal)
         .build()
@@ -120,9 +120,9 @@ fn main() -> wag::Result<()> {
         .add_panel(red_surface, CellLimit::default())?
         .add_panel(green_surface, CellLimit::default())?
         .add_panel(blue_surface, CellLimit::default())?
-        .create()?;
+        .try_into()?;
 
-    let vribbon = RibbonParams::builder()
+    let vribbon: Arc<Ribbon> = RibbonParams::builder()
         .compositor(compositor.clone())
         .orientation(RibbonOrientation::Vertical)
         .build()
@@ -131,13 +131,13 @@ fn main() -> wag::Result<()> {
             button,
             CellLimit::new(1., 50., Some(300.), Some(Vector2 { X: 0.5, Y: 0.8 })),
         )?
-        .create()?;
+        .try_into()?;
 
-    let layer_stack = LayerStackParams::builder()
+    let layer_stack: Arc<LayerStack> = LayerStackParams::builder()
         .compositor(compositor.clone())
         .build()
         .push_panel(vribbon)
-        .create()?;
+        .try_into()?;
 
     let root_visual = compositor.CreateContainerVisual()?;
     root_visual.SetSize(Vector2 { X: 800., Y: 600. })?;

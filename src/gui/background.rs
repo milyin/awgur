@@ -85,20 +85,30 @@ pub struct BackgroundParams {
     compositor: Compositor,
 }
 
-impl BackgroundParams {
-    pub fn create(self) -> crate::Result<Arc<Background>> {
-        let container = self.compositor.CreateShapeVisual()?;
+impl TryFrom<BackgroundParams> for Background {
+    type Error = crate::Error;
+
+    fn try_from(value: BackgroundParams) -> crate::Result<Self> {
+        let container = value.compositor.CreateShapeVisual()?;
         let core = RwLock::new(Core {
-            round_corners: self.round_corners,
-            color: self.color,
-            compositor: self.compositor,
+            round_corners: value.round_corners,
+            color: value.color,
+            compositor: value.compositor,
             container: container.clone(),
         });
-        Ok(Arc::new(Background {
+        Ok(Background {
             container: container.into(),
             core,
             panel_events: EventStreams::new(),
-        }))
+        })
+    }
+}
+
+impl TryFrom<BackgroundParams> for Arc<Background> {
+    type Error = crate::Error;
+
+    fn try_from(value: BackgroundParams) -> crate::Result<Self> {
+        Ok(Arc::new(value.try_into()?))
     }
 }
 
