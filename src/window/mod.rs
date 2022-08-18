@@ -10,7 +10,7 @@ pub mod native {
 
 pub use graphics::{
     check_for_device_removed, create_composition_graphics_device, d2d1_device, d3d11_device,
-    dwrite_factory,
+    dwrite_factory, draw
 };
 pub use interop::create_dispatcher_queue_controller;
 pub use interop::create_dispatcher_queue_controller_for_current_thread;

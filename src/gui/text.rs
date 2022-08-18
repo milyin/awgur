@@ -8,26 +8,31 @@ use windows::{
     core::{InParam, Interface},
     w,
     Foundation::Numerics::{Matrix3x2, Vector2},
-    Graphics::DirectX::{DirectXAlphaMode, DirectXPixelFormat},
+    Graphics::{
+        DirectX::{DirectXAlphaMode, DirectXPixelFormat},
+        SizeInt32,
+    },
     Win32::{
         Foundation::POINT,
         Graphics::{
             Direct2D::{
-                Common::{D2D1_COLOR_F, D2D_POINT_2F},
+                Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F},
                 ID2D1DeviceContext, D2D1_BRUSH_PROPERTIES, D2D1_DRAW_TEXT_OPTIONS,
                 D2D1_DRAW_TEXT_OPTIONS_NONE,
             },
             DirectWrite::{
-                DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_BOLD,
+                DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_ITALIC, DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_WEIGHT_BOLD, DWRITE_MEASURING_MODE, DWRITE_MEASURING_MODE_NATURAL,
                 DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER,
+                DWRITE_TEXT_ALIGNMENT_LEADING,
             },
             Gdi::CreateSolidBrush,
         },
         System::WinRT::Composition::ICompositionDrawingSurfaceInterop,
     },
     UI::Composition::{
-        CompositionGraphicsDevice, CompositionStretch, CompositionSurfaceBrush, Compositor,
-        SpriteVisual, Visual,
+        CompositionDrawingSurface, CompositionGraphicsDevice, CompositionStretch,
+        CompositionSurfaceBrush, Compositor, SpriteVisual, Visual,
     },
 };
 
@@ -40,6 +45,7 @@ use super::{EventSink, EventSource, Panel, PanelEvent};
 struct Core {
     composition_graphic_device: CompositionGraphicsDevice,
     text: String,
+    surface: CompositionDrawingSurface,
     surface_brush: CompositionSurfaceBrush,
     sprite_visual: SpriteVisual,
 }
@@ -51,69 +57,72 @@ impl Core {
         text: String,
     ) -> crate::Result<Self> {
         let composition_graphic_device = create_composition_graphics_device(&compositor)?;
+
         let surface_brush = compositor.CreateSurfaceBrush()?;
         surface_brush.SetStretch(CompositionStretch::None)?;
-        surface_brush.SetHorizontalAlignmentRatio(0.)?;
-        surface_brush.SetVerticalAlignmentRatio(0.)?;
-        // surface_brush.SetTransformMatrix(windows::Foundation::Numerics::Matrix3x2::translation(
-        //     20., 20.,
-        // ))?;
+        let surface = composition_graphic_device.CreateDrawingSurface(
+            windows::Foundation::Size::default(),
+            DirectXPixelFormat::B8G8R8A8UIntNormalized,
+            DirectXAlphaMode::Premultiplied,
+        )?;
+        surface_brush.SetSurface(&surface)?;
         sprite_visual.SetBrush(&surface_brush)?;
+
         Ok(Self {
             composition_graphic_device,
             text,
+            surface,
             surface_brush,
             sprite_visual,
         })
     }
     fn resize(&mut self, size: Vector2) -> crate::Result<()> {
-        self.redraw(&size)?;
         self.sprite_visual.SetSize(size)?;
+        let new_surface_size = SizeInt32 {
+            Width: size.X as i32,
+            Height: size.Y as i32,
+        };
+        self.surface.Resize(new_surface_size)?;
+        self.redraw(&size)?;
         Ok(())
     }
     fn redraw(&mut self, size: &Vector2) -> crate::Result<()> {
-        let surface = self.composition_graphic_device.CreateDrawingSurface(
-            windows::Foundation::Size {
-                Width: size.X,
-                Height: size.Y,
-            },
-            DirectXPixelFormat::B8G8R8A8UIntNormalized,
-            DirectXAlphaMode::Premultiplied,
-        )?;
-        self.surface_brush.SetSurface(&surface)?;
+        let fontsize = size.Y;
+        // let fontsize = 30.;
         let dwrite_text_format = unsafe {
             dwrite_factory()?.CreateTextFormat(
                 w!("Segoe UI"),
                 InParam::null(),
                 DWRITE_FONT_WEIGHT_BOLD,
-                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STYLE_ITALIC,
                 DWRITE_FONT_STRETCH_NORMAL,
-                60.,
+                fontsize,
                 w!("en-US"),
             )
         }?;
         unsafe { dwrite_text_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER) }?;
         unsafe { dwrite_text_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER) }?;
+        // unsafe { dwrite_text_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING) }?;
         let text_layout = unsafe {
             dwrite_factory()?.CreateTextLayout(
                 self.text.as_str().to_wide().0.as_slice(),
                 &dwrite_text_format,
                 size.X,
-                size.Y,
+                size.Y / 2.,
             )
         }?;
 
         let mut updateoffset = POINT { x: 0, y: 0 };
-        let surface_interop: ICompositionDrawingSurfaceInterop = surface.cast()?;
+        let surface_interop: ICompositionDrawingSurfaceInterop = self.surface.cast()?;
         let context: Option<ID2D1DeviceContext> = check_for_device_removed(unsafe {
             surface_interop.BeginDraw(std::ptr::null(), &mut updateoffset)
         })?;
         if let Some(context) = context {
             let clearcolor = D2D1_COLOR_F {
-                r: 255.,
-                g: 127.,
-                b: 0.,
-                a: 1.,
+                r: 0.,
+                g: 30.,
+                b: 30.,
+                a: 255.,
             };
             let text_color = D2D1_COLOR_F {
                 r: 0.,
@@ -129,14 +138,31 @@ impl Core {
             let text_brush =
                 unsafe { context.CreateSolidColorBrush(&text_color, &text_brush_properties) }?;
             unsafe {
+                context.DrawText(
+                    self.text.as_str().to_wide().0.as_slice(),
+                    &dwrite_text_format,
+                    &D2D_RECT_F {
+                        left: updateoffset.x as f32,
+                        top: updateoffset.y as f32,
+                        right: updateoffset.x as f32 + size.X,
+                        bottom: updateoffset.y as f32 + size.Y,
+                    },
+                    &text_brush,
+                    D2D1_DRAW_TEXT_OPTIONS_NONE,
+                    DWRITE_MEASURING_MODE_NATURAL,
+                );
+                /*
                 context.DrawTextLayout(
-                    D2D_POINT_2F { x: 0., y: 0. },
+                    D2D_POINT_2F {
+                        x: 0.,
+                        y: size.Y / 2.,
+                    },
                     &text_layout,
                     &text_brush,
                     D2D1_DRAW_TEXT_OPTIONS_NONE,
                 )
+                */
             };
-
             unsafe { surface_interop.EndDraw() }?;
         }
         Ok(())

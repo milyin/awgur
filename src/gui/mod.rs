@@ -3,6 +3,7 @@ mod button;
 mod layer_stack;
 mod panel;
 mod ribbon;
+// mod surface;
 mod text;
 
 use std::sync::Arc;
@@ -14,8 +15,9 @@ pub use button::{
     Button, ButtonEvent, ButtonParams, ButtonSkin, SimpleButtonSkin, SimpleButtonSkinParams,
 };
 pub use layer_stack::{LayerStack, LayerStackParams};
-pub use panel::{spawn_window_event_receiver, ArcPanel, Panel, PanelEvent, attach, detach};
+pub use panel::{attach, detach, spawn_window_event_receiver, ArcPanel, Panel, PanelEvent};
 pub use ribbon::{CellLimit, Ribbon, RibbonOrientation, RibbonParams};
+// pub use surface::{Surface, SurfaceParams};
 pub use text::{Text, TextParams};
 
 use windows::Foundation::Numerics::Vector2;

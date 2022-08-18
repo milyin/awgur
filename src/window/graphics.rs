@@ -2,11 +2,11 @@ use windows::{
     core::{InParam, Interface},
     Win32::Graphics::Dxgi::{DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET},
     Win32::{
-        Foundation::HINSTANCE,
+        Foundation::{HINSTANCE, POINT},
         Graphics::{
             Direct2D::{
-                D2D1CreateFactory, ID2D1Device, ID2D1Factory1, D2D1_FACTORY_OPTIONS,
-                D2D1_FACTORY_TYPE_SINGLE_THREADED,
+                D2D1CreateFactory, ID2D1Device, ID2D1DeviceContext, ID2D1Factory1,
+                D2D1_FACTORY_OPTIONS, D2D1_FACTORY_TYPE_SINGLE_THREADED,
             },
             Direct3D::{D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP},
             Direct3D11::{
@@ -16,9 +16,9 @@ use windows::{
             DirectWrite::{DWriteCreateFactory, IDWriteFactory, DWRITE_FACTORY_TYPE_SHARED},
             Dxgi::IDXGIDevice,
         },
-        System::WinRT::Composition::ICompositorInterop,
+        System::WinRT::Composition::{ICompositionDrawingSurfaceInterop, ICompositorInterop},
     },
-    UI::Composition::{CompositionGraphicsDevice, Compositor},
+    UI::Composition::{CompositionDrawingSurface, CompositionGraphicsDevice, Compositor},
 };
 
 thread_local! {
@@ -105,4 +105,20 @@ pub fn check_for_device_removed<T>(
         }
         _ => result.map(|v| Some(v)),
     }
+}
+
+pub fn draw<F: Fn(ID2D1DeviceContext, POINT) -> crate::Result<()>>(
+    surface: &CompositionDrawingSurface,
+    f: F,
+) -> crate::Result<()> {
+    let mut updateoffset = POINT { x: 0, y: 0 };
+    let surface_interop: ICompositionDrawingSurfaceInterop = surface.cast()?;
+    let context: Option<ID2D1DeviceContext> = check_for_device_removed(unsafe {
+        surface_interop.BeginDraw(std::ptr::null(), &mut updateoffset)
+    })?;
+    if let Some(context) = context {
+        f(context, updateoffset)?;
+        unsafe { surface_interop.EndDraw() }?;
+    }
+    Ok(())
 }

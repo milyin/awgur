@@ -4,8 +4,8 @@ use futures::{executor::ThreadPool, StreamExt};
 use wag::{
     async_handle_err,
     gui::{
-        spawn_window_event_receiver, Background, BackgroundParams, ButtonEvent, ButtonParams,
-        CellLimit, EventSource, LayerStackParams, RibbonOrientation, RibbonParams,
+        spawn_window_event_receiver, Background, BackgroundParams, Button, ButtonEvent,
+        ButtonParams, CellLimit, EventSource, LayerStackParams, RibbonOrientation, RibbonParams,
         SimpleButtonSkinParams,
     },
     window::{
@@ -26,25 +26,29 @@ fn main() -> wag::Result<()> {
     // println!("Remaining charge: {charge}%");
 
     let _window_thread = initialize_window_thread()?;
-    let pool = ThreadPool::builder() //.pool_size(8)
-        .create()?;
+    let pool = ThreadPool::builder().pool_size(1).create()?;
     let compositor = Compositor::new()?;
 
     // let canvas_device = CanvasDevice::GetSharedDevice()?;
     // let composition_graphics_device =
     //     CanvasComposition::CreateCompositionGraphicsDevice(&compositor, &canvas_device)?;
 
-    let button_skin = SimpleButtonSkinParams::builder()
-        .compositor(compositor.clone())
-        .color(Colors::Magenta()?)
-        .text("Rotate".to_owned())
-        .build()
-        .create()?;
-    let button = ButtonParams::builder()
-        .skin(button_skin)
-        .compositor(compositor.clone())
-        .build()
-        .create()?;
+    let b = || -> wag::Result<Arc<Button>> {
+        let button_skin = SimpleButtonSkinParams::builder()
+            .compositor(compositor.clone())
+            .color(Colors::Magenta()?)
+            .text("Rotate".to_owned())
+            .build()
+            .create()?;
+        let button = ButtonParams::builder()
+            .skin(button_skin)
+            .compositor(compositor.clone())
+            .build()
+            .create()?;
+        Ok(button)
+    };
+
+    let button = b()?;
 
     let red_surface = BackgroundParams::builder()
         .compositor(compositor.clone())
@@ -107,6 +111,12 @@ fn main() -> wag::Result<()> {
         .compositor(compositor.clone())
         .orientation(RibbonOrientation::Horizontal)
         .build()
+        .add_panel(b()?, CellLimit::default())?
+        .add_panel(b()?, CellLimit::default())?
+        .add_panel(b()?, CellLimit::default())?
+        .add_panel(b()?, CellLimit::default())?
+        .add_panel(b()?, CellLimit::default())?
+        .add_panel(b()?, CellLimit::default())?
         .add_panel(red_surface, CellLimit::default())?
         .add_panel(green_surface, CellLimit::default())?
         .add_panel(blue_surface, CellLimit::default())?
