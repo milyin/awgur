@@ -1,4 +1,4 @@
-use super::{attach, ArcPanel, TextParams};
+use super::{attach, ArcPanel, TextParams, Text};
 use super::{
     Background, BackgroundParams, EventSink, EventSource, LayerStack, LayerStackParams, Panel,
     PanelEvent,
@@ -7,6 +7,7 @@ use async_event_streams::{EventBox, EventStream, EventStreams};
 use async_std::sync::Arc;
 use async_std::sync::RwLock;
 use async_trait::async_trait;
+use futures::task::Spawn;
 use typed_builder::TypedBuilder;
 use windows::UI::Composition::Visual;
 use windows::UI::{
@@ -153,26 +154,28 @@ pub struct SimpleButtonSkin {
 }
 
 #[derive(TypedBuilder)]
-pub struct SimpleButtonSkinParams {
+pub struct SimpleButtonSkinParams<T: Spawn> {
     compositor: Compositor,
     text: String,
     color: Color,
+    spawner: T,
 }
 
-impl TryFrom<SimpleButtonSkinParams> for SimpleButtonSkin {
+impl<T: Spawn> TryFrom<SimpleButtonSkinParams<T>> for SimpleButtonSkin {
     type Error = crate::Error;
-    fn try_from(value: SimpleButtonSkinParams) -> crate::Result<Self> {
+    fn try_from(value: SimpleButtonSkinParams<T>) -> crate::Result<Self> {
         let background: Arc<Background> = BackgroundParams::builder()
             .color(value.color)
             .round_corners(true)
             .compositor(value.compositor.clone())
             .build()
             .try_into()?;
-        let text = TextParams::builder()
+        let text: Arc<Text> = TextParams::builder()
             .compositor(value.compositor.clone())
             .text(value.text)
+            .spawner(value.spawner)
             .build()
-            .create()?;
+            .try_into()?;
         let layer_stack = LayerStackParams::builder()
             .compositor(value.compositor.clone())
             .build()
@@ -188,10 +191,10 @@ impl TryFrom<SimpleButtonSkinParams> for SimpleButtonSkin {
     }
 }
 
-impl TryFrom<SimpleButtonSkinParams> for Arc<SimpleButtonSkin> {
+impl<T: Spawn> TryFrom<SimpleButtonSkinParams<T>> for Arc<SimpleButtonSkin> {
     type Error = crate::Error;
 
-    fn try_from(value: SimpleButtonSkinParams) -> crate::Result<Self> {
+    fn try_from(value: SimpleButtonSkinParams<T>) -> crate::Result<Self> {
         Ok(Arc::new(value.try_into()?))
     }
 }

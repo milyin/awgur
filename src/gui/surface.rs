@@ -4,12 +4,8 @@ use async_event_streams::{EventBox, EventStream, EventStreams};
 use async_trait::async_trait;
 use typed_builder::TypedBuilder;
 use windows::{
-    core::Interface,
+    Foundation::Numerics::Vector2,
     Graphics::DirectX::{DirectXAlphaMode, DirectXPixelFormat},
-    Win32::{
-        Foundation::POINT, Graphics::Direct2D::ID2D1DeviceContext,
-        System::WinRT::Composition::ICompositionDrawingSurfaceInterop,
-    },
     UI::Composition::{
         CompositionDrawingSurface, CompositionGraphicsDevice, CompositionStretch,
         CompositionSurfaceBrush, Compositor, SpriteVisual, Visual,
@@ -20,12 +16,18 @@ use crate::window::{check_for_device_removed, create_composition_graphics_device
 
 use super::{EventSink, EventSource, Panel, PanelEvent};
 
+#[derive(PartialEq)]
+pub enum SurfaceEvent {
+    Redraw(Vector2),
+}
+
 pub struct Surface {
     sprite_visual: SpriteVisual,
     composition_graphic_device: CompositionGraphicsDevice,
     surface: CompositionDrawingSurface,
     surface_brush: CompositionSurfaceBrush,
     panel_events: EventStreams<PanelEvent>,
+    surface_events: EventStreams<SurfaceEvent>,
 }
 
 impl Surface {
@@ -47,6 +49,7 @@ impl Surface {
             surface,
             surface_brush,
             panel_events: EventStreams::new(),
+            surface_events: EventStreams::new(),
         })
     }
     pub fn surface(&self) -> &CompositionDrawingSurface {
@@ -63,6 +66,9 @@ impl EventSink<PanelEvent> for Surface {
     ) -> crate::Result<()> {
         if let PanelEvent::Resized(size) = &event {
             self.sprite_visual.SetSize(*size)?;
+            self.surface_events.clear(); // No need to keep unhandled redraw events - only latest one makes sense
+            self.surface_events
+                .post_event(SurfaceEvent::Redraw(*size), None);
         }
         self.panel_events.send_event(event, source).await;
         Ok(())
@@ -72,6 +78,11 @@ impl EventSink<PanelEvent> for Surface {
 impl EventSource<PanelEvent> for Surface {
     fn event_stream(&self) -> EventStream<PanelEvent> {
         self.panel_events.create_event_stream()
+    }
+}
+impl EventSource<SurfaceEvent> for Surface {
+    fn event_stream(&self) -> EventStream<SurfaceEvent> {
+        self.surface_events.create_event_stream()
     }
 }
 

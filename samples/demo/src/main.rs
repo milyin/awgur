@@ -26,7 +26,7 @@ fn main() -> wag::Result<()> {
     // println!("Remaining charge: {charge}%");
 
     let _window_thread = initialize_window_thread()?;
-    let pool = ThreadPool::builder().pool_size(1).create()?;
+    let pool = ThreadPool::builder().pool_size(8).create()?;
     let compositor = Compositor::new()?;
 
     // let canvas_device = CanvasDevice::GetSharedDevice()?;
@@ -38,6 +38,7 @@ fn main() -> wag::Result<()> {
             .compositor(compositor.clone())
             .color(Colors::Magenta()?)
             .text("Rotate".to_owned())
+            .spawner(pool.clone())
             .build()
             .try_into()?;
         let button = ButtonParams::builder()

@@ -3,79 +3,145 @@ use std::sync::Arc;
 use async_event_streams::{EventBox, EventStream, EventStreams};
 use async_std::sync::RwLock;
 use async_trait::async_trait;
+use futures::{
+    task::{Spawn, SpawnExt},
+    StreamExt,
+};
 use typed_builder::TypedBuilder;
 use windows::{
-    core::{InParam, Interface},
+    core::InParam,
     w,
     Foundation::Numerics::{Matrix3x2, Vector2},
-    Graphics::{
-        DirectX::{DirectXAlphaMode, DirectXPixelFormat},
-        SizeInt32,
-    },
-    Win32::{
-        Foundation::POINT,
-        Graphics::{
-            Direct2D::{
-                Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F},
-                ID2D1DeviceContext, D2D1_BRUSH_PROPERTIES, D2D1_DRAW_TEXT_OPTIONS,
-                D2D1_DRAW_TEXT_OPTIONS_NONE,
-            },
-            DirectWrite::{
-                DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_ITALIC, DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_WEIGHT_BOLD, DWRITE_MEASURING_MODE, DWRITE_MEASURING_MODE_NATURAL,
-                DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER,
-                DWRITE_TEXT_ALIGNMENT_LEADING,
-            },
-            Gdi::CreateSolidBrush,
+    Graphics::SizeInt32,
+    Win32::Graphics::{
+        Direct2D::{
+            Common::{D2D1_COLOR_F, D2D_RECT_F},
+            D2D1_BRUSH_PROPERTIES, D2D1_DRAW_TEXT_OPTIONS_NONE,
         },
-        System::WinRT::Composition::ICompositionDrawingSurfaceInterop,
+        DirectWrite::{
+            DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_ITALIC, DWRITE_FONT_WEIGHT_BOLD,
+            DWRITE_MEASURING_MODE_NATURAL,
+        },
     },
-    UI::Composition::{
-        CompositionDrawingSurface, CompositionGraphicsDevice, CompositionStretch,
-        CompositionSurfaceBrush, Compositor, SpriteVisual, Visual,
-    },
+    UI::Composition::{CompositionDrawingSurface, Compositor, Visual},
 };
 
-use crate::window::{
-    check_for_device_removed, create_composition_graphics_device, dwrite_factory, ToWide,
+use crate::{
+    async_handle_err,
+    window::{draw, dwrite_factory, ToWide},
 };
 
-use super::{EventSink, EventSource, Panel, PanelEvent};
+use super::{
+    surface::SurfaceEvent, EventSink, EventSource, Panel, PanelEvent, Surface, SurfaceParams,
+};
 
 struct Core {
-    composition_graphic_device: CompositionGraphicsDevice,
     text: String,
-    surface: CompositionDrawingSurface,
-    surface_brush: CompositionSurfaceBrush,
-    sprite_visual: SpriteVisual,
 }
 
 impl Core {
-    fn new(
-        compositor: Compositor,
-        sprite_visual: SpriteVisual,
-        text: String,
-    ) -> crate::Result<Self> {
-        let composition_graphic_device = create_composition_graphics_device(&compositor)?;
-
-        let surface_brush = compositor.CreateSurfaceBrush()?;
-        surface_brush.SetStretch(CompositionStretch::None)?;
-        let surface = composition_graphic_device.CreateDrawingSurface(
-            windows::Foundation::Size::default(),
-            DirectXPixelFormat::B8G8R8A8UIntNormalized,
-            DirectXAlphaMode::Premultiplied,
-        )?;
-        surface_brush.SetSurface(&surface)?;
-        sprite_visual.SetBrush(&surface_brush)?;
-
-        Ok(Self {
-            composition_graphic_device,
-            text,
-            surface,
-            surface_brush,
-            sprite_visual,
-        })
+    fn new(text: String) -> crate::Result<Self> {
+        Ok(Self { text })
     }
+}
+
+pub struct Text {
+    surface: Arc<Surface>,
+    core: Arc<RwLock<Core>>,
+    panel_events: EventStreams<PanelEvent>,
+}
+
+impl Text {
+    fn redraw(size: Vector2, surface: &CompositionDrawingSurface, text: &str) -> crate::Result<()> {
+        let new_surface_size = SizeInt32 {
+            Width: size.X as i32,
+            Height: size.Y as i32,
+        };
+        surface.Resize(new_surface_size)?;
+        draw(surface, |context, point| {
+            let fontsize = 30.;
+            let dwrite_text_format = unsafe {
+                dwrite_factory()?.CreateTextFormat(
+                    w!("Segoe UI"),
+                    InParam::null(),
+                    DWRITE_FONT_WEIGHT_BOLD,
+                    DWRITE_FONT_STYLE_ITALIC,
+                    DWRITE_FONT_STRETCH_NORMAL,
+                    fontsize,
+                    w!("en-US"),
+                )
+            }?;
+
+            let clearcolor = D2D1_COLOR_F {
+                r: 0.,
+                g: 30.,
+                b: 30.,
+                a: 255.,
+            };
+            let text_color = D2D1_COLOR_F {
+                r: 0.,
+                g: 0.,
+                b: 0.,
+                a: 255.,
+            };
+            let text_brush_properties = D2D1_BRUSH_PROPERTIES {
+                opacity: 1.,
+                transform: Matrix3x2::identity(),
+            };
+            unsafe { context.Clear(&clearcolor) };
+            let text_brush =
+                unsafe { context.CreateSolidColorBrush(&text_color, &text_brush_properties) }?;
+            unsafe {
+                context.DrawText(
+                    text.to_wide().0.as_slice(),
+                    &dwrite_text_format,
+                    &D2D_RECT_F {
+                        left: point.x as f32,
+                        top: point.y as f32,
+                        right: point.x as f32 + size.X,
+                        bottom: point.y as f32 + size.Y,
+                    },
+                    &text_brush,
+                    D2D1_DRAW_TEXT_OPTIONS_NONE,
+                    DWRITE_MEASURING_MODE_NATURAL,
+                );
+                /*
+                context.DrawTextLayout(
+                    D2D_POINT_2F {
+                        x: 0.,
+                        y: size.Y / 2.,
+                    },
+                    &text_layout,
+                    &text_brush,
+                    D2D1_DRAW_TEXT_OPTIONS_NONE,
+                )
+                */
+            };
+
+            Ok(())
+        })?;
+        Ok(())
+    }
+    fn run_surface_update_task<T: Spawn>(&self, spawner: T) -> crate::Result<()> {
+        let surface = self.surface.clone();
+        let mut stream: EventStream<SurfaceEvent> = surface.event_stream();
+        let core = self.core.clone();
+        spawner.spawn(async_handle_err(async move {
+            while let Some(event) = stream.next().await {
+                match *event {
+                    SurfaceEvent::Redraw(size) => {
+                        Self::redraw(size, surface.surface(), core.read().await.text.as_str())?
+                    }
+                }
+            }
+            Ok(())
+        }))?;
+        Ok(())
+    }
+}
+
+/*
+impl Text {
     fn resize(&mut self, size: Vector2) -> crate::Result<()> {
         self.sprite_visual.SetSize(size)?;
         let new_surface_size = SizeInt32 {
@@ -169,13 +235,7 @@ impl Core {
     }
 }
 
-pub struct Text {
-    visual: Visual,
-    core: RwLock<Core>,
-    panel_events: EventStreams<PanelEvent>,
-}
-
-impl Text {}
+*/
 
 #[async_trait]
 impl EventSink<PanelEvent> for Text {
@@ -184,9 +244,7 @@ impl EventSink<PanelEvent> for Text {
         event: PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
-        if let PanelEvent::Resized(size) = &event {
-            self.core.write().await.resize(*size)?;
-        }
+        self.surface.on_event(event.clone(), source.clone()).await?;
         self.panel_events.send_event(event, source).await;
         Ok(())
     }
@@ -201,26 +259,41 @@ impl EventSource<PanelEvent> for Text {
 #[async_trait]
 impl Panel for Text {
     fn outer_frame(&self) -> Visual {
-        self.visual.clone()
+        self.surface.outer_frame()
     }
 }
 
 #[derive(TypedBuilder)]
-pub struct TextParams {
+pub struct TextParams<T: Spawn> {
     compositor: Compositor,
     text: String,
+    spawner: T,
 }
 
-impl TextParams {
-    pub fn create(self) -> crate::Result<Arc<Text>> {
-        let sprite_visual = self.compositor.CreateSpriteVisual()?;
-        let visual = sprite_visual.clone().into();
-        let core = RwLock::new(Core::new(self.compositor, sprite_visual, self.text)?);
-        Ok(Arc::new(Text {
-            visual,
+impl<T: Spawn> TryFrom<TextParams<T>> for Text {
+    type Error = crate::Error;
+
+    fn try_from(value: TextParams<T>) -> crate::Result<Self> {
+        let surface: Arc<Surface> = SurfaceParams::builder()
+            .compositor(value.compositor)
+            .build()
+            .try_into()?;
+        let core = Arc::new(RwLock::new(Core::new(value.text)?));
+        let text = Text {
+            surface,
             core,
             panel_events: EventStreams::new(),
-        }))
+        };
+        text.run_surface_update_task(value.spawner)?;
+        Ok(text)
+    }
+}
+
+impl<T: Spawn> TryFrom<TextParams<T>> for Arc<Text> {
+    type Error = crate::Error;
+
+    fn try_from(value: TextParams<T>) -> crate::Result<Self> {
+        Ok(Arc::new(value.try_into()?))
     }
 }
 
