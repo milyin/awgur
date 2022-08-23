@@ -139,13 +139,13 @@ impl EventSource<PanelEvent> for Background {
 impl EventSink<PanelEvent> for Background {
     async fn on_event(
         &self,
-        event: PanelEvent,
+        event: &PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         if let PanelEvent::Resized(size) = &event {
             self.core.write().await.resize(*size)?;
         }
-        self.panel_events.send_event(event, source).await;
+        self.panel_events.send_event(event.clone(), source).await;
         Ok(())
     }
 }

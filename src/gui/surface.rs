@@ -61,7 +61,7 @@ impl Surface {
 impl EventSink<PanelEvent> for Surface {
     async fn on_event(
         &self,
-        event: PanelEvent,
+        event: &PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         if let PanelEvent::Resized(size) = &event {
@@ -70,7 +70,7 @@ impl EventSink<PanelEvent> for Surface {
             self.surface_events
                 .post_event(SurfaceEvent::Redraw(*size), None);
         }
-        self.panel_events.send_event(event, source).await;
+        self.panel_events.send_event(event.clone(), source).await;
         Ok(())
     }
 }

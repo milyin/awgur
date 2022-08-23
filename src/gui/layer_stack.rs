@@ -38,18 +38,18 @@ impl LayerStack {
     }
     async fn translate_event_to_all_layers(
         &self,
-        event: PanelEvent,
+        event: &PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         // TODO: run simultaneously
         for item in self.layers().await {
-            item.on_event(event.clone(), source.clone()).await?;
+            item.on_event(event, source.clone()).await?;
         }
         Ok(())
     }
     async fn translate_event_to_top_layer(
         &self,
-        event: PanelEvent,
+        event: &PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         if let Some(item) = self.layers().await.first_mut() {
@@ -59,12 +59,12 @@ impl LayerStack {
     }
     async fn translate_event(
         &self,
-        event: PanelEvent,
+        event: &PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         match event {
             PanelEvent::Resized(size) => {
-                self.container.SetSize(size)?;
+                self.container.SetSize(*size)?;
                 self.translate_event_to_all_layers(event, source).await
             }
             PanelEvent::MouseInput { .. } => self.translate_event_to_top_layer(event, source).await,
@@ -145,11 +145,11 @@ impl EventSource<PanelEvent> for LayerStack {
 impl EventSink<PanelEvent> for LayerStack {
     async fn on_event(
         &self,
-        event: PanelEvent,
+        event: &PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
-        self.translate_event(event.clone(), source.clone()).await?;
-        self.panel_events.send_event(event, source).await;
+        self.translate_event(event, source.clone()).await?;
+        self.panel_events.send_event(event.clone(), source).await;
         Ok(())
     }
 }

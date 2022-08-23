@@ -252,28 +252,28 @@ impl EventSource<PanelEvent> for Ribbon {
 impl EventSink<PanelEvent> for Ribbon {
     async fn on_event(
         &self,
-        event: PanelEvent,
+        event: &PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         match event {
             PanelEvent::Resized(size) => {
-                self.translate_panel_event_resized(size, source.clone())
+                self.translate_panel_event_resized(*size, source.clone())
                     .await
             }
             PanelEvent::MouseInput { state, button, .. } => {
-                self.translate_slot_event_mouse_input(state, button, source.clone())
+                self.translate_slot_event_mouse_input(*state, *button, source.clone())
                     .await
             }
             PanelEvent::CursorMoved(mouse_pos) => {
-                self.translate_slot_event_cursor_moved(mouse_pos, source.clone())
+                self.translate_slot_event_cursor_moved(*mouse_pos, source.clone())
                     .await
             }
             _ => {
-                self.translate_panel_event_default(event.clone(), source.clone())
+                self.translate_panel_event_default(event, source.clone())
                     .await
             }
         }?;
-        self.panel_events.send_event(event, source).await;
+        self.panel_events.send_event(event.clone(), source).await;
         Ok(())
     }
 }
@@ -281,13 +281,13 @@ impl EventSink<PanelEvent> for Ribbon {
 impl Ribbon {
     async fn translate_panel_event_default(
         &self,
-        event: PanelEvent,
+        event: &PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         // TODO: run simultaneosuly
         let cells = self.core.read().await.cells();
         for cell in cells {
-            cell.panel.on_event(event.clone(), source.clone()).await?;
+            cell.panel.on_event(event, source.clone()).await?;
         }
         Ok(())
     }
@@ -303,7 +303,7 @@ impl Ribbon {
         for cell in cells {
             let size = cell.container.Size()?;
             cell.panel
-                .on_event(PanelEvent::Resized(size), source.clone())
+                .on_event(&PanelEvent::Resized(size), source.clone())
                 .await?;
         }
         Ok(())
@@ -320,7 +320,7 @@ impl Ribbon {
         for cell in cells {
             let mouse_pos = cell.translate_point(mouse_pos)?;
             cell.panel
-                .on_event(PanelEvent::CursorMoved(mouse_pos), source.clone())
+                .on_event(&PanelEvent::CursorMoved(mouse_pos), source.clone())
                 .await?;
         }
         Ok(())
@@ -340,7 +340,7 @@ impl Ribbon {
                 let in_slot = cell.is_translated_point_in_cell(mouse_pos)?;
                 cell.panel
                     .on_event(
-                        PanelEvent::MouseInput {
+                        &PanelEvent::MouseInput {
                             in_slot,
                             state,
                             button,

@@ -1,4 +1,4 @@
-use super::{attach, ArcPanel, TextParams, Text};
+use super::{attach, ArcPanel, Text, TextParams};
 use super::{
     Background, BackgroundParams, EventSink, EventSource, LayerStack, LayerStackParams, Panel,
     PanelEvent,
@@ -99,11 +99,11 @@ impl EventSource<PanelEvent> for Button {
 impl EventSink<PanelEvent> for Button {
     async fn on_event(
         &self,
-        event: PanelEvent,
+        event: &PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         let skin = self.core.read().await.skin_panel();
-        skin.on_event(event.clone(), source.clone()).await?;
+        skin.on_event(event, source.clone()).await?;
         self.panel_events
             .send_event(event.clone(), source.clone())
             .await;
@@ -114,19 +114,19 @@ impl EventSink<PanelEvent> for Button {
                 state,
                 button,
             } => {
-                if button == MouseButton::Left {
-                    if state == ElementState::Pressed {
-                        if in_slot {
+                if *button == MouseButton::Left {
+                    if *state == ElementState::Pressed {
+                        if *in_slot {
                             self.core.write().await.press();
                             self.button_events
                                 .send_event(ButtonEvent::Press, source)
                                 .await;
                         }
-                    } else if state == ElementState::Released {
+                    } else if *state == ElementState::Released {
                         let released = self.core.write().await.release();
                         if released {
                             self.button_events
-                                .send_event(ButtonEvent::Release(in_slot), source)
+                                .send_event(ButtonEvent::Release(*in_slot), source)
                                 .await;
                         }
                     }
@@ -148,7 +148,7 @@ pub trait ButtonSkin: ArcPanel + EventSink<ButtonEvent> {}
 
 pub struct SimpleButtonSkin {
     layer_stack: LayerStack,
-    // text: Arc<Text>,
+    text: Arc<Text>,
     background: Arc<Background>,
     panel_events: EventStreams<PanelEvent>,
 }
@@ -185,7 +185,7 @@ impl<T: Spawn> TryFrom<SimpleButtonSkinParams<T>> for SimpleButtonSkin {
         Ok(SimpleButtonSkin {
             layer_stack,
             background,
-            // text,
+            text,
             panel_events: EventStreams::new(),
         })
     }
@@ -201,7 +201,7 @@ impl<T: Spawn> TryFrom<SimpleButtonSkinParams<T>> for Arc<SimpleButtonSkin> {
 
 #[async_trait]
 impl EventSink<ButtonEvent> for SimpleButtonSkin {
-    async fn on_event(&self, event: ButtonEvent, _: Option<Arc<EventBox>>) -> crate::Result<()> {
+    async fn on_event(&self, event: &ButtonEvent, _: Option<Arc<EventBox>>) -> crate::Result<()> {
         match event {
             ButtonEvent::Press => self.background.set_color(Colors::DarkMagenta()?).await?,
             ButtonEvent::Release(_) => self.background.set_color(Colors::Magenta()?).await?,
@@ -214,7 +214,7 @@ impl EventSink<ButtonEvent> for SimpleButtonSkin {
 impl EventSink<PanelEvent> for SimpleButtonSkin {
     async fn on_event(
         &self,
-        event: PanelEvent,
+        event: &PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         self.layer_stack.on_event(event, source).await

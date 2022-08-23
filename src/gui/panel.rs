@@ -84,7 +84,7 @@ impl<EVT: Send + Sync + 'static, T: EventSource<EVT>> EventSource<EVT> for Arc<T
 
 #[async_trait]
 impl<EVT: Send + Sync + 'static, T: EventSink<EVT> + Send + Sync> EventSink<EVT> for Arc<T> {
-    async fn on_event(&self, event: EVT, source: Option<Arc<EventBox>>) -> crate::Result<()> {
+    async fn on_event(&self, event: &EVT, source: Option<Arc<EventBox>>) -> crate::Result<()> {
         self.as_ref().on_event(event, source).await
     }
 }
@@ -105,7 +105,7 @@ impl<EVT: Send + Sync + 'static, T: EventSource<EVT> + ?Sized> EventSource<EVT> 
 impl<EVT: Send + Sync + 'static, T: EventSink<EVT> + Send + Sync + ?Sized> EventSink<EVT>
     for Box<T>
 {
-    async fn on_event(&self, event: EVT, source: Option<Arc<EventBox>>) -> crate::Result<()> {
+    async fn on_event(&self, event: &EVT, source: Option<Arc<EventBox>>) -> crate::Result<()> {
         self.as_ref().on_event(event, source).await
     }
 }
@@ -152,7 +152,7 @@ pub fn spawn_window_event_receiver(
                 PanelEvent::Resized(size) => container.SetSize(*size)?,
                 _ => (),
             };
-            panel.on_event(panel_event, None).await?;
+            panel.on_event(&panel_event, None).await?;
         }
         Ok(())
     }))?;
