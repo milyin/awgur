@@ -1,6 +1,6 @@
 use async_std::sync::{Arc, RwLock};
 
-use super::{attach, detach, ArcPanel, EventSink, EventSource, Panel, PanelEvent};
+use super::{attach, detach, EventSink, EventSource, Panel, PanelEvent};
 use async_event_streams::{EventBox, EventStream, EventStreams};
 use async_trait::async_trait;
 
@@ -29,7 +29,7 @@ impl LayerStack {
         Ok(())
     }
 
-    pub async fn remove_panel(&mut self, panel: impl ArcPanel) -> crate::Result<()> {
+    pub async fn remove_panel(&mut self, panel: impl Panel) -> crate::Result<()> {
         let mut core = self.core.write().await;
         if let Some(index) = core.layers.iter().position(|v| v.id() == panel.id()) {
             detach(&panel)?;

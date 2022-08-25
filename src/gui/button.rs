@@ -1,4 +1,4 @@
-use super::{attach, ArcPanel, Text, TextParams};
+use super::{attach, Text, TextParams};
 use super::{
     Background, BackgroundParams, EventSink, EventSource, LayerStack, LayerStackParams, Panel,
     PanelEvent,

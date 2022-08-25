@@ -17,7 +17,7 @@ pub use button::{
 };
 use futures::task::{Spawn, SpawnError, SpawnExt};
 pub use layer_stack::{LayerStack, LayerStackParams};
-pub use panel::{attach, detach, spawn_window_event_receiver, ArcPanel, Panel, PanelEvent};
+pub use panel::{attach, detach, spawn_window_event_receiver, Panel, PanelEvent};
 pub use ribbon::{CellLimit, Ribbon, RibbonOrientation, RibbonParams};
 pub use surface::{Surface, SurfaceParams};
 pub use text::{Text, TextParams};

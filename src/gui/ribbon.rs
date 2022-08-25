@@ -1,5 +1,5 @@
 use super::{
-    attach, is_translated_point_in_box, ArcPanel, EventSink, EventSource, Panel, PanelEvent,
+    attach, is_translated_point_in_box, EventSink, EventSource, Panel, PanelEvent,
 };
 use async_event_streams::{EventBox, EventStream, EventStreams};
 use async_std::sync::{Arc, RwLock};
