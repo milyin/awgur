@@ -130,6 +130,7 @@ pub struct Ribbon {
     ribbon_container: ContainerVisual,
     core: RwLock<Core>,
     panel_events: EventStreams<PanelEvent>,
+    id: Arc<()>
 }
 
 #[derive(TypedBuilder)]
@@ -167,6 +168,7 @@ impl TryFrom<RibbonParams> for Ribbon {
             ribbon_container,
             core,
             panel_events: EventStreams::new(),
+            id: Arc::new(())
         })
     }
 }
@@ -239,6 +241,9 @@ impl Ribbon {
 impl Panel for Ribbon {
     fn outer_frame(&self) -> Visual {
         self.ribbon_container.clone().into()
+    }
+    fn id(&self) -> usize {
+        Arc::as_ptr(&self.id) as usize
     }
 }
 

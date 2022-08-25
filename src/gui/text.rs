@@ -139,6 +139,7 @@ pub struct Text {
     surface: Arc<Surface>,
     core: Arc<RwLock<Core>>,
     panel_events: EventStreams<PanelEvent>,
+    id: Arc<()>
 }
 
 /*
@@ -262,6 +263,9 @@ impl Panel for Text {
     fn outer_frame(&self) -> Visual {
         self.surface.outer_frame()
     }
+    fn id(&self) -> usize {
+        Arc::as_ptr(&self.id) as usize
+    }
 }
 
 #[derive(TypedBuilder)]
@@ -289,6 +293,7 @@ impl<T: Spawn> TryFrom<TextParams<T>> for Text {
             surface,
             core,
             panel_events: EventStreams::new(),
+            id: Arc::new(())
         })
     }
 }

@@ -32,6 +32,7 @@ pub struct Button {
     core: RwLock<Core>,
     panel_events: EventStreams<PanelEvent>,
     button_events: EventStreams<ButtonEvent>,
+    id: Arc<()>
 }
 
 #[derive(TypedBuilder)]
@@ -57,6 +58,7 @@ impl TryFrom<ButtonParams> for Button {
             core,
             panel_events: EventStreams::new(),
             button_events: EventStreams::new(),
+            id: Arc::new(())
         })
     }
 }
@@ -141,6 +143,9 @@ impl EventSink<PanelEvent> for Button {
 impl Panel for Button {
     fn outer_frame(&self) -> Visual {
         self.container.clone().into()
+    }
+    fn id(&self) -> usize {
+        Arc::as_ptr(&self.id) as usize
     }
 }
 
@@ -230,6 +235,9 @@ impl EventSource<PanelEvent> for SimpleButtonSkin {
 impl Panel for SimpleButtonSkin {
     fn outer_frame(&self) -> Visual {
         self.layer_stack.outer_frame()
+    }
+    fn id(&self) -> usize {
+        Arc::as_ptr(&self.text) as usize
     }
 }
 

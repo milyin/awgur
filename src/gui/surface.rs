@@ -28,6 +28,7 @@ pub struct Surface {
     surface_brush: CompositionSurfaceBrush,
     panel_events: EventStreams<PanelEvent>,
     surface_events: EventStreams<SurfaceEvent>,
+    id: Arc<()>
 }
 
 impl Surface {
@@ -50,6 +51,7 @@ impl Surface {
             surface_brush,
             panel_events: EventStreams::new(),
             surface_events: EventStreams::new(),
+            id: Arc::new(())
         })
     }
     pub fn surface(&self) -> &CompositionDrawingSurface {
@@ -66,7 +68,7 @@ impl EventSink<PanelEvent> for Surface {
     ) -> crate::Result<()> {
         if let PanelEvent::Resized(size) = &event {
             self.sprite_visual.SetSize(*size)?;
-            self.surface_events.clear(); // No need to keep unhandled redraw events - only latest one makes sense
+            // self.surface_events.clear(); // No need to keep unhandled redraw events - only latest one makes sense
             self.surface_events
                 .post_event(SurfaceEvent::Redraw(*size), None);
         }
@@ -90,6 +92,9 @@ impl EventSource<SurfaceEvent> for Surface {
 impl Panel for Surface {
     fn outer_frame(&self) -> Visual {
         self.sprite_visual.clone().into()
+    }
+    fn id(&self) -> usize {
+        Arc::as_ptr(&self.id) as usize
     }
 }
 

@@ -76,6 +76,7 @@ pub struct Background {
     container: ContainerVisual,
     core: RwLock<Core>,
     panel_events: EventStreams<PanelEvent>,
+    id: Arc<()>
 }
 
 #[derive(TypedBuilder)]
@@ -100,6 +101,7 @@ impl TryFrom<BackgroundParams> for Background {
             container: container.into(),
             core,
             panel_events: EventStreams::new(),
+            id: Arc::new(())
         })
     }
 }
@@ -127,6 +129,9 @@ impl Panel for Background {
     fn outer_frame(&self) -> Visual {
         self.container.clone().into()
     }
+    fn id(&self) -> usize {
+        Arc::as_ptr(&self.id) as usize
+    } 
 }
 
 impl EventSource<PanelEvent> for Background {

@@ -15,6 +15,7 @@ pub struct LayerStack {
     container: ContainerVisual,
     core: RwLock<Core>,
     panel_events: EventStreams<PanelEvent>,
+    id: Arc<()>
 }
 
 impl LayerStack {
@@ -117,6 +118,7 @@ impl TryFrom<LayerStackParams> for LayerStack {
             container,
             core,
             panel_events: EventStreams::new(),
+            id: Arc::new(())
         })
     }
 }
@@ -132,6 +134,9 @@ impl TryFrom<LayerStackParams> for Arc<LayerStack> {
 impl Panel for LayerStack {
     fn outer_frame(&self) -> Visual {
         self.container.clone().into()
+    }
+    fn id(&self) -> usize {
+        Arc::as_ptr(&self.id) as usize
     }
 }
 
