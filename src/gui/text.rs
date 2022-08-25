@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
-use async_event_streams::{Event, EventBox, EventStream, EventStreams};
+use async_event_streams::{EventBox, EventStream, EventStreams};
 use async_std::sync::RwLock;
 use async_trait::async_trait;
 use futures::{
-    task::{Spawn, SpawnExt},
-    StreamExt,
+    task::{Spawn},
 };
 use typed_builder::TypedBuilder;
 use windows::{
@@ -27,7 +26,6 @@ use windows::{
 };
 
 use crate::{
-    async_handle_err,
     window::{draw, dwrite_factory, ToWide},
 };
 

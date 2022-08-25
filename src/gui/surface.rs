@@ -12,7 +12,7 @@ use windows::{
     },
 };
 
-use crate::window::{check_for_device_removed, create_composition_graphics_device};
+use crate::window::{create_composition_graphics_device};
 
 use super::{EventSink, EventSource, Panel, PanelEvent};
 
@@ -68,7 +68,7 @@ impl EventSink<PanelEvent> for Surface {
     ) -> crate::Result<()> {
         if let PanelEvent::Resized(size) = &event {
             self.sprite_visual.SetSize(*size)?;
-            // self.surface_events.clear(); // No need to keep unhandled redraw events - only latest one makes sense
+            self.surface_events.clear(); // No need to keep unhandled redraw events - only latest one makes sense
             self.surface_events
                 .post_event(SurfaceEvent::Redraw(*size), None);
         }

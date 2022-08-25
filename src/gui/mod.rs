@@ -8,7 +8,7 @@ mod text;
 
 use std::sync::Arc;
 
-use async_event_streams::{Event, EventBox, EventStream};
+use async_event_streams::{EventBox, EventStream};
 use async_std::stream::StreamExt;
 use async_trait::async_trait;
 pub use background::{Background, BackgroundParams};
