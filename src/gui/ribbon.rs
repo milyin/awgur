@@ -61,18 +61,18 @@ impl Default for CellLimit {
 
 #[derive(Clone)]
 pub struct Cell {
-    panel: Box<dyn ArcPanel>,
+    panel: Arc<dyn Panel>,
     container: ContainerVisual,
     limit: CellLimit,
 }
 
 impl Cell {
-    fn new(panel: impl ArcPanel, compositor: &Compositor, limit: CellLimit) -> crate::Result<Self> {
+    fn new(panel: Arc<dyn Panel>, compositor: &Compositor, limit: CellLimit) -> crate::Result<Self> {
         let panel = panel;
         let container = compositor.CreateContainerVisual()?;
-        attach(&container, &panel)?;
+        attach(&container, &*panel)?;
         Ok(Self {
-            panel: panel.clone_box(),
+            panel: panel.into(),
             container,
             limit,
         })
@@ -142,7 +142,7 @@ pub struct RibbonParams {
 }
 
 impl RibbonParams {
-    pub fn add_panel(self, panel: impl ArcPanel, limit: CellLimit) -> crate::Result<Self> {
+    pub fn add_panel(self, panel: Arc<dyn Panel>, limit: CellLimit) -> crate::Result<Self> {
         let mut this = self;
         this.cells.push(Cell::new(panel, &this.compositor, limit)?);
         Ok(this)
@@ -182,7 +182,7 @@ impl TryFrom<RibbonParams> for Arc<Ribbon> {
 }
 
 impl Ribbon {
-    pub async fn add_panel(&self, panel: impl ArcPanel, limit: CellLimit) -> crate::Result<()> {
+    pub async fn add_panel(&self, panel: Arc<dyn Panel>, limit: CellLimit) -> crate::Result<()> {
         let cell = Cell::new(panel, &self.compositor, limit)?;
         self.ribbon_container
             .Children()?

@@ -8,7 +8,7 @@ use typed_builder::TypedBuilder;
 use windows::UI::Composition::{Compositor, ContainerVisual, Visual};
 
 struct Core {
-    layers: Vec<Box<dyn ArcPanel>>,
+    layers: Vec<Arc<dyn Panel>>,
 }
 
 pub struct LayerStack {
@@ -19,13 +19,13 @@ pub struct LayerStack {
 }
 
 impl LayerStack {
-    async fn layers(&self) -> Vec<Box<dyn ArcPanel>> {
+    async fn layers(&self) -> Vec<Arc<dyn Panel>> {
         self.core.read().await.layers.clone()
     }
 
-    pub async fn push_panel(&mut self, panel: impl ArcPanel) -> crate::Result<()> {
-        attach(&self.container, &panel)?;
-        self.core.write().await.layers.push(panel.clone_box());
+    pub async fn push_panel(&mut self, panel: Arc<dyn Panel>) -> crate::Result<()> {
+        attach(&self.container, &*panel)?;
+        self.core.write().await.layers.push(panel);
         Ok(())
     }
 
@@ -94,11 +94,11 @@ impl LayerStack {
 pub struct LayerStackParams {
     compositor: Compositor,
     #[builder(default)]
-    layers: Vec<Box<dyn ArcPanel>>,
+    layers: Vec<Arc<dyn Panel>>,
 }
 impl LayerStackParams {
-    pub fn push_panel(mut self, panel: impl ArcPanel) -> Self {
-        self.layers.push(panel.clone_box());
+    pub fn push_panel(mut self, panel: Arc<dyn Panel>) -> Self {
+        self.layers.push(panel);
         self
     }
 }
@@ -110,7 +110,7 @@ impl TryFrom<LayerStackParams> for LayerStack {
         let mut layers = value.layers;
         let container = value.compositor.CreateContainerVisual()?;
         for layer in &mut layers {
-            attach(&container, layer)?;
+            attach(&container, &**layer)?;
         }
         let core = RwLock::new(Core { layers });
         // container.SetComment(HSTRING::from("LAYER_STACK"))?;

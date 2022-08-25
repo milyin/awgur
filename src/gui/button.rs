@@ -23,7 +23,7 @@ pub enum ButtonEvent {
 }
 
 struct Core {
-    skin: Box<dyn ButtonSkin>,
+    skin: Arc<dyn ButtonSkin>,
     pressed: bool,
 }
 
@@ -38,8 +38,8 @@ pub struct Button {
 #[derive(TypedBuilder)]
 pub struct ButtonParams {
     compositor: Compositor,
-    #[builder(setter(transform = |skin: impl ButtonSkin + 'static | Box::new(skin) as Box<dyn ButtonSkin>))]
-    skin: Box<dyn ButtonSkin>,
+    #[builder(setter(transform = |skin: impl ButtonSkin + 'static | Arc::new(skin) as Arc<dyn ButtonSkin>))]
+    skin: Arc<dyn ButtonSkin>,
 }
 
 impl TryFrom<ButtonParams> for Button {
@@ -48,7 +48,7 @@ impl TryFrom<ButtonParams> for Button {
     fn try_from(value: ButtonParams) -> crate::Result<Self> {
         let container = value.compositor.CreateContainerVisual()?;
         let skin = value.skin;
-        attach(&container, &skin)?;
+        attach(&container, &*skin)?;
         let core = RwLock::new(Core {
             skin,
             pressed: false,
@@ -80,8 +80,8 @@ impl Core {
         self.pressed = false;
         pressed
     }
-    fn skin_panel(&self) -> Box<dyn ArcPanel> {
-        self.skin.clone_box()
+    fn skin_panel(&self) -> Arc<dyn ButtonSkin> {
+        self.skin.clone()
     }
 }
 
@@ -149,7 +149,7 @@ impl Panel for Button {
     }
 }
 
-pub trait ButtonSkin: ArcPanel + EventSink<ButtonEvent> {}
+pub trait ButtonSkin: Panel + EventSink<ButtonEvent> {}
 
 pub struct SimpleButtonSkin {
     layer_stack: LayerStack,

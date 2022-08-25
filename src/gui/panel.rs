@@ -59,7 +59,7 @@ pub trait Panel: Send + Sync + EventSource<PanelEvent> + EventSink<PanelEvent> {
     fn outer_frame(&self) -> Visual;
     fn id(&self) -> usize;
 }
-pub fn attach(container: &ContainerVisual, panel: &impl Panel) -> crate::Result<()> {
+pub fn attach<T: Panel + ?Sized>(container: &ContainerVisual, panel: &T) -> crate::Result<()> {
     container.Children()?.InsertAtTop(&panel.outer_frame())?;
     Ok(())
 }
@@ -73,7 +73,7 @@ pub fn detach(panel: &impl Panel) -> crate::Result<()> {
 }
 
 pub trait ArcPanel: Panel {
-    fn clone_box(&self) -> Box<dyn ArcPanel>;
+    fn clone_box_FOO(&self) -> Box<dyn ArcPanel>;
 }
 
 impl<EVT: Send + Sync + 'static, T: EventSource<EVT>> EventSource<EVT> for Arc<T> {
@@ -123,7 +123,7 @@ impl<T: Panel + ?Sized> Panel for Box<T> {
 }
 
 impl<T: Panel + 'static> ArcPanel for Arc<T> {
-    fn clone_box(&self) -> Box<dyn ArcPanel> {
+    fn clone_box_FOO(&self) -> Box<dyn ArcPanel> {
         Box::new(self.clone())
     }
 }
@@ -136,7 +136,7 @@ impl Hash for dyn ArcPanel {
 
 impl Clone for Box<dyn ArcPanel> {
     fn clone(&self) -> Self {
-        self.clone_box()
+        self.clone_box_FOO()
     }
 }
 pub fn spawn_window_event_receiver(
