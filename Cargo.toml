@@ -5,11 +5,11 @@ edition = "2021"
 
 [dependencies]
 async_event_streams = { path = "../async-event-streams" }
-#async_event_streams = "0.1.1"
+#async_event_streams = "0.1.2"
 futures = "0.3.17"
 thiserror = "1.0"
 float-ord = "0.3.2"
-winit = "0.26.0"
+winit = "0.27.2"
 typed-builder = "0.10.0"
 async-trait = "0.1.52"
 async-std = "1.11.0"
