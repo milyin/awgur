@@ -1,11 +1,9 @@
 use std::sync::Arc;
 
-use async_event_streams::{EventBox, EventStream, EventStreams};
+use async_event_streams::{EventBox, EventStream, EventStreams, EventSource};
 use async_std::sync::RwLock;
 use async_trait::async_trait;
-use futures::{
-    task::{Spawn},
-};
+use futures::task::Spawn;
 use typed_builder::TypedBuilder;
 use windows::{
     core::InParam,
@@ -25,13 +23,10 @@ use windows::{
     UI::Composition::{CompositionDrawingSurface, Compositor, Visual},
 };
 
-use crate::{
-    window::{draw, dwrite_factory, ToWide},
-};
+use crate::window::{draw, dwrite_factory, ToWide};
 
 use super::{
-    create_event_pipe, surface::SurfaceEvent, EventSink, EventSource, Panel, PanelEvent, Surface,
-    SurfaceParams,
+    create_event_pipe, surface::SurfaceEvent, EventSink, Panel, PanelEvent, Surface, SurfaceParams,
 };
 
 struct Core {
@@ -137,7 +132,7 @@ pub struct Text {
     surface: Arc<Surface>,
     core: Arc<RwLock<Core>>,
     panel_events: EventStreams<PanelEvent>,
-    id: Arc<()>
+    id: Arc<()>,
 }
 
 /*
@@ -291,7 +286,7 @@ impl<T: Spawn> TryFrom<TextParams<T>> for Text {
             surface,
             core,
             panel_events: EventStreams::new(),
-            id: Arc::new(())
+            id: Arc::new(()),
         })
     }
 }

@@ -1,7 +1,5 @@
-use super::{
-    attach, is_translated_point_in_box, EventSink, EventSource, Panel, PanelEvent,
-};
-use async_event_streams::{EventBox, EventStream, EventStreams};
+use super::{attach, is_translated_point_in_box, EventSink, Panel, PanelEvent};
+use async_event_streams::{EventBox, EventSource, EventStream, EventStreams};
 use async_std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use typed_builder::TypedBuilder;
@@ -67,7 +65,11 @@ pub struct Cell {
 }
 
 impl Cell {
-    fn new(panel: Arc<dyn Panel>, compositor: &Compositor, limit: CellLimit) -> crate::Result<Self> {
+    fn new(
+        panel: Arc<dyn Panel>,
+        compositor: &Compositor,
+        limit: CellLimit,
+    ) -> crate::Result<Self> {
         let panel = panel;
         let container = compositor.CreateContainerVisual()?;
         attach(&container, &*panel)?;
@@ -130,7 +132,7 @@ pub struct Ribbon {
     ribbon_container: ContainerVisual,
     core: RwLock<Core>,
     panel_events: EventStreams<PanelEvent>,
-    id: Arc<()>
+    id: Arc<()>,
 }
 
 #[derive(TypedBuilder)]
@@ -168,7 +170,7 @@ impl TryFrom<RibbonParams> for Ribbon {
             ribbon_container,
             core,
             panel_events: EventStreams::new(),
-            id: Arc::new(())
+            id: Arc::new(()),
         })
     }
 }

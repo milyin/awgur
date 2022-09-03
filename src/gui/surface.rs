@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use async_event_streams::{EventBox, EventStream, EventStreams};
+use async_event_streams::{EventBox, EventSource, EventStream, EventStreams};
 use async_trait::async_trait;
 use typed_builder::TypedBuilder;
 use windows::{
@@ -12,9 +12,9 @@ use windows::{
     },
 };
 
-use crate::window::{create_composition_graphics_device};
+use crate::window::create_composition_graphics_device;
 
-use super::{EventSink, EventSource, Panel, PanelEvent};
+use super::{EventSink, Panel, PanelEvent};
 
 #[derive(PartialEq)]
 pub enum SurfaceEvent {
@@ -28,7 +28,7 @@ pub struct Surface {
     surface_brush: CompositionSurfaceBrush,
     panel_events: EventStreams<PanelEvent>,
     surface_events: EventStreams<SurfaceEvent>,
-    id: Arc<()>
+    id: Arc<()>,
 }
 
 impl Surface {
@@ -51,7 +51,7 @@ impl Surface {
             surface_brush,
             panel_events: EventStreams::new(),
             surface_events: EventStreams::new(),
-            id: Arc::new(())
+            id: Arc::new(()),
         })
     }
     pub fn surface(&self) -> &CompositionDrawingSurface {

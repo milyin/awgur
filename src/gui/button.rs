@@ -1,9 +1,8 @@
 use super::{attach, Text, TextParams};
 use super::{
-    Background, BackgroundParams, EventSink, EventSource, LayerStack, LayerStackParams, Panel,
-    PanelEvent,
+    Background, BackgroundParams, EventSink, LayerStack, LayerStackParams, Panel, PanelEvent,
 };
-use async_event_streams::{EventBox, EventStream, EventStreams};
+use async_event_streams::{EventBox, EventSource, EventStream, EventStreams};
 use async_std::sync::Arc;
 use async_std::sync::RwLock;
 use async_trait::async_trait;
@@ -32,7 +31,7 @@ pub struct Button {
     core: RwLock<Core>,
     panel_events: EventStreams<PanelEvent>,
     button_events: EventStreams<ButtonEvent>,
-    id: Arc<()>
+    id: Arc<()>,
 }
 
 #[derive(TypedBuilder)]
@@ -58,7 +57,7 @@ impl TryFrom<ButtonParams> for Button {
             core,
             panel_events: EventStreams::new(),
             button_events: EventStreams::new(),
-            id: Arc::new(())
+            id: Arc::new(()),
         })
     }
 }
@@ -241,4 +240,4 @@ impl Panel for SimpleButtonSkin {
     }
 }
 
-impl ButtonSkin for Arc<SimpleButtonSkin> {}
+impl ButtonSkin for SimpleButtonSkin {}

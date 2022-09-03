@@ -1,8 +1,6 @@
-use std::{
-    sync::Arc,
-};
+use std::sync::Arc;
 
-use async_event_streams::{EventBox, EventStream};
+use async_event_streams::{EventBox, EventSource, EventStream};
 use async_trait::async_trait;
 use futures::{
     channel::mpsc::{channel, Sender},
@@ -17,7 +15,7 @@ use winit::event::{ElementState, MouseButton, WindowEvent};
 
 use crate::async_handle_err;
 
-use super::{EventSink, EventSource, IntoVector2};
+use super::{EventSink, IntoVector2};
 
 #[derive(Clone, Debug)]
 pub enum PanelEvent {
@@ -71,31 +69,10 @@ pub fn detach(panel: &impl Panel) -> crate::Result<()> {
     Ok(())
 }
 
-impl<EVT: Send + Sync + 'static, T: EventSource<EVT>> EventSource<EVT> for Arc<T> {
-    fn event_stream(&self) -> EventStream<EVT> {
-        self.as_ref().event_stream()
-    }
-}
-
 #[async_trait]
 impl<EVT: Send + Sync + 'static, T: EventSink<EVT> + Send + Sync> EventSink<EVT> for Arc<T> {
     async fn on_event(&self, event: &EVT, source: Option<Arc<EventBox>>) -> crate::Result<()> {
         self.as_ref().on_event(event, source).await
-    }
-}
-
-impl<T: Panel> Panel for Arc<T> {
-    fn outer_frame(&self) -> Visual {
-        self.as_ref().outer_frame()
-    }
-    fn id(&self) -> usize {
-        self.as_ref().id()
-    }
-}
-
-impl<EVT: Send + Sync + 'static, T: EventSource<EVT> + ?Sized> EventSource<EVT> for Box<T> {
-    fn event_stream(&self) -> EventStream<EVT> {
-        self.as_ref().event_stream()
     }
 }
 
@@ -105,15 +82,6 @@ impl<EVT: Send + Sync + 'static, T: EventSink<EVT> + Send + Sync + ?Sized> Event
 {
     async fn on_event(&self, event: &EVT, source: Option<Arc<EventBox>>) -> crate::Result<()> {
         self.as_ref().on_event(event, source).await
-    }
-}
-
-impl<T: Panel + ?Sized> Panel for Box<T> {
-    fn outer_frame(&self) -> Visual {
-        self.as_ref().outer_frame()
-    }
-    fn id(&self) -> usize {
-        self.as_ref().id()
     }
 }
 

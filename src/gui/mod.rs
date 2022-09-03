@@ -96,10 +96,6 @@ where
     }
 }
 
-pub trait EventSource<EVT: Send + Sync + 'static> {
-    fn event_stream(&self) -> EventStream<EVT>;
-}
-
 #[async_trait]
 pub trait EventSink<EVT: Send + Sync + 'static> {
     async fn on_event(&self, event: &EVT, source: Option<Arc<EventBox>>) -> crate::Result<()>;

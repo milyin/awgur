@@ -1,4 +1,4 @@
-use async_event_streams::{EventBox, EventStream, EventStreams};
+use async_event_streams::{EventBox, EventSource, EventStream, EventStreams};
 use async_std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use float_ord::FloatOrd;
@@ -11,7 +11,7 @@ use windows::{
     },
 };
 
-use super::{EventSink, EventSource, Panel, PanelEvent};
+use super::{EventSink, Panel, PanelEvent};
 
 struct Core {
     round_corners: bool,
@@ -76,7 +76,7 @@ pub struct Background {
     container: ContainerVisual,
     core: RwLock<Core>,
     panel_events: EventStreams<PanelEvent>,
-    id: Arc<()>
+    id: Arc<()>,
 }
 
 #[derive(TypedBuilder)]
@@ -101,7 +101,7 @@ impl TryFrom<BackgroundParams> for Background {
             container: container.into(),
             core,
             panel_events: EventStreams::new(),
-            id: Arc::new(())
+            id: Arc::new(()),
         })
     }
 }
@@ -131,7 +131,7 @@ impl Panel for Background {
     }
     fn id(&self) -> usize {
         Arc::as_ptr(&self.id) as usize
-    } 
+    }
 }
 
 impl EventSource<PanelEvent> for Background {
