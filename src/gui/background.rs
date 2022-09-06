@@ -1,4 +1,9 @@
-use async_event_streams::{EventBox, EventSource, EventStream, EventStreams};
+use std::borrow::Cow;
+
+use async_event_streams::{
+    EventBox, EventSink, EventSinkExt, EventSource, EventStream, EventStreams,
+};
+use async_event_streams_derive::{self, EventSink};
 use async_std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use float_ord::FloatOrd;
@@ -11,7 +16,7 @@ use windows::{
     },
 };
 
-use super::{EventSink, Panel, PanelEvent};
+use super::{Panel, PanelEvent};
 
 struct Core {
     round_corners: bool,
@@ -72,6 +77,8 @@ impl Core {
     }
 }
 
+#[derive(EventSink)]
+#[event_sink(event=PanelEvent)]
 pub struct Background {
     container: ContainerVisual,
     core: RwLock<Core>,
@@ -141,16 +148,19 @@ impl EventSource<PanelEvent> for Background {
 }
 
 #[async_trait]
-impl EventSink<PanelEvent> for Background {
-    async fn on_event(
-        &self,
-        event: &PanelEvent,
+impl EventSinkExt<PanelEvent> for Background {
+    type Error = crate::Error;
+    async fn on_event<'a>(
+        &'a self,
+        event: Cow<'a, PanelEvent>,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
-        if let PanelEvent::Resized(size) = &event {
+        if let PanelEvent::Resized(size) = event.as_ref() {
             self.core.write().await.resize(*size)?;
         }
-        self.panel_events.send_event(event.clone(), source).await;
+        self.panel_events
+            .send_event(event.into_owned(), source)
+            .await;
         Ok(())
     }
 }

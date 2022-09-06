@@ -37,3 +37,4 @@ impl From<std::io::Error> for Error {
 pub fn async_handle_err(future: impl Future<Output = Result<()>>) -> impl Future<Output = ()> {
     async { (future.await).unwrap() }
 }
+

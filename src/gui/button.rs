@@ -1,8 +1,11 @@
+use std::borrow::Cow;
+
 use super::{attach, Text, TextParams};
-use super::{
-    Background, BackgroundParams, EventSink, LayerStack, LayerStackParams, Panel, PanelEvent,
+use super::{Background, BackgroundParams, LayerStack, LayerStackParams, Panel, PanelEvent};
+use async_event_streams::{
+    EventBox, EventSink, EventSinkExt, EventSource, EventStream, EventStreams,
 };
-use async_event_streams::{EventBox, EventSource, EventStream, EventStreams};
+use async_event_streams_derive::{self, EventSink};
 use async_std::sync::Arc;
 use async_std::sync::RwLock;
 use async_trait::async_trait;
@@ -15,7 +18,7 @@ use windows::UI::{
 };
 use winit::event::{ElementState, MouseButton};
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub enum ButtonEvent {
     Press,
     Release(bool),
@@ -26,6 +29,8 @@ struct Core {
     pressed: bool,
 }
 
+#[derive(EventSink)]
+#[event_sink(event=PanelEvent)]
 pub struct Button {
     container: ContainerVisual,
     core: RwLock<Core>,
@@ -97,19 +102,19 @@ impl EventSource<PanelEvent> for Button {
 }
 
 #[async_trait]
-impl EventSink<PanelEvent> for Button {
-    async fn on_event(
-        &self,
-        event: &PanelEvent,
+impl EventSinkExt<PanelEvent> for Button {
+    type Error = crate::Error;
+    async fn on_event<'a>(
+        &'a self,
+        event: Cow<'a, PanelEvent>,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         let skin = self.core.read().await.skin_panel();
-        skin.on_event(event, source.clone()).await?;
+        skin.on_event_ref(event.as_ref(), source.clone()).await?;
         self.panel_events
-            .send_event(event.clone(), source.clone())
+            .send_event(event.clone().into_owned(), source.clone())
             .await;
-
-        match event {
+        match event.as_ref() {
             PanelEvent::MouseInput {
                 in_slot,
                 state,
@@ -148,8 +153,12 @@ impl Panel for Button {
     }
 }
 
-pub trait ButtonSkin: Panel + EventSink<ButtonEvent> {}
+pub trait ButtonSkin: Panel + EventSink<ButtonEvent, Error = crate::Error> {}
+impl<T: Panel + EventSink<ButtonEvent, Error = crate::Error>> ButtonSkin for T {}
 
+#[derive(EventSink)]
+#[event_sink(event=PanelEvent)]
+#[event_sink(event=ButtonEvent)]
 pub struct SimpleButtonSkin {
     layer_stack: LayerStack,
     text: Arc<Text>,
@@ -204,9 +213,14 @@ impl<T: Spawn> TryFrom<SimpleButtonSkinParams<T>> for Arc<SimpleButtonSkin> {
 }
 
 #[async_trait]
-impl EventSink<ButtonEvent> for SimpleButtonSkin {
-    async fn on_event(&self, event: &ButtonEvent, _: Option<Arc<EventBox>>) -> crate::Result<()> {
-        match event {
+impl EventSinkExt<ButtonEvent> for SimpleButtonSkin {
+    type Error = crate::Error;
+    async fn on_event<'a>(
+        &'a self,
+        event: Cow<'a, ButtonEvent>,
+        _: Option<Arc<EventBox>>,
+    ) -> crate::Result<()> {
+        match event.as_ref() {
             ButtonEvent::Press => self.background.set_color(Colors::DarkMagenta()?).await?,
             ButtonEvent::Release(_) => self.background.set_color(Colors::Magenta()?).await?,
         }
@@ -215,10 +229,11 @@ impl EventSink<ButtonEvent> for SimpleButtonSkin {
 }
 
 #[async_trait]
-impl EventSink<PanelEvent> for SimpleButtonSkin {
-    async fn on_event(
-        &self,
-        event: &PanelEvent,
+impl EventSinkExt<PanelEvent> for SimpleButtonSkin {
+    type Error = crate::Error;
+    async fn on_event<'a>(
+        &'a self,
+        event: Cow<'a, PanelEvent>,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         self.layer_stack.on_event(event, source).await
@@ -239,5 +254,3 @@ impl Panel for SimpleButtonSkin {
         Arc::as_ptr(&self.text) as usize
     }
 }
-
-impl ButtonSkin for SimpleButtonSkin {}

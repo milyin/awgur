@@ -1,6 +1,9 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
-use async_event_streams::{EventBox, EventSource, EventStream, EventStreams};
+use async_event_streams::{
+    EventBox, EventSink, EventSinkExt, EventSource, EventStream, EventStreams,
+};
+use async_event_streams_derive::EventSink;
 use async_trait::async_trait;
 use typed_builder::TypedBuilder;
 use windows::{
@@ -14,13 +17,15 @@ use windows::{
 
 use crate::window::create_composition_graphics_device;
 
-use super::{EventSink, Panel, PanelEvent};
+use super::{Panel, PanelEvent};
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub enum SurfaceEvent {
     Redraw(Vector2),
 }
 
+#[derive(EventSink)]
+#[event_sink(event=PanelEvent)]
 pub struct Surface {
     sprite_visual: SpriteVisual,
     composition_graphic_device: CompositionGraphicsDevice,
@@ -60,19 +65,22 @@ impl Surface {
 }
 
 #[async_trait]
-impl EventSink<PanelEvent> for Surface {
-    async fn on_event(
-        &self,
-        event: &PanelEvent,
+impl EventSinkExt<PanelEvent> for Surface {
+    type Error = crate::Error;
+    async fn on_event<'a>(
+        &'a self,
+        event: Cow<'a, PanelEvent>,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
-        if let PanelEvent::Resized(size) = &event {
+        if let PanelEvent::Resized(size) = event.as_ref() {
             self.sprite_visual.SetSize(*size)?;
             self.surface_events.clear(); // No need to keep unhandled redraw events - only latest one makes sense
             self.surface_events
                 .post_event(SurfaceEvent::Redraw(*size), None);
         }
-        self.panel_events.send_event(event.clone(), source).await;
+        self.panel_events
+            .send_event(event.into_owned(), source)
+            .await;
         Ok(())
     }
 }

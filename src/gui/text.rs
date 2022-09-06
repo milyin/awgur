@@ -1,6 +1,9 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
-use async_event_streams::{EventBox, EventStream, EventStreams, EventSource};
+use async_event_streams::{
+    spawn_event_pipe, EventBox, EventSink, EventSinkExt, EventSource, EventStream, EventStreams,
+};
+use async_event_streams_derive::EventSink;
 use async_std::sync::RwLock;
 use async_trait::async_trait;
 use futures::task::Spawn;
@@ -25,10 +28,10 @@ use windows::{
 
 use crate::window::{draw, dwrite_factory, ToWide};
 
-use super::{
-    create_event_pipe, surface::SurfaceEvent, EventSink, Panel, PanelEvent, Surface, SurfaceParams,
-};
+use super::{surface::SurfaceEvent, Panel, PanelEvent, Surface, SurfaceParams};
 
+#[derive(EventSink)]
+#[event_sink(event=SurfaceEvent)]
 struct Core {
     surface: Arc<Surface>,
     text: String,
@@ -112,22 +115,24 @@ fn redraw(size: Vector2, surface: &CompositionDrawingSurface, text: &str) -> cra
 }
 
 #[async_trait]
-impl EventSink<SurfaceEvent> for Arc<RwLock<Core>> {
-    async fn on_event(
-        &self,
-        event: &SurfaceEvent,
+impl EventSinkExt<SurfaceEvent> for Core {
+    type Error = crate::Error;
+    async fn on_event<'a>(
+        &'a self,
+        event: Cow<'a, SurfaceEvent>,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
-        let this = self.read().await;
-        match event {
+        match event.as_ref() {
             SurfaceEvent::Redraw(size) => {
-                redraw(*size, &*this.surface.surface(), this.text.as_str())?
+                redraw(*size, self.surface.surface(), self.text.as_str())?
             }
         }
         Ok(())
     }
 }
 
+#[derive(EventSink)]
+#[event_sink(event=PanelEvent)]
 pub struct Text {
     surface: Arc<Surface>,
     core: Arc<RwLock<Core>>,
@@ -233,14 +238,19 @@ impl Text {
 */
 
 #[async_trait]
-impl EventSink<PanelEvent> for Text {
-    async fn on_event(
-        &self,
-        event: &PanelEvent,
+impl EventSinkExt<PanelEvent> for Text {
+    type Error = crate::Error;
+    async fn on_event<'a>(
+        &'a self,
+        event: Cow<'a, PanelEvent>,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
-        self.surface.on_event(event, source.clone()).await?;
-        self.panel_events.send_event(event.clone(), source).await;
+        self.surface
+            .on_event_ref(event.as_ref(), source.clone())
+            .await?;
+        self.panel_events
+            .send_event(event.into_owned(), source)
+            .await;
         Ok(())
     }
 }
@@ -277,11 +287,8 @@ impl<T: Spawn> TryFrom<TextParams<T>> for Text {
             .build()
             .try_into()?;
         let core = Arc::new(RwLock::new(Core::new(surface.clone(), value.text)?));
-        create_event_pipe::<SurfaceEvent, _, _>(
-            value.spawner,
-            surface.event_stream(),
-            core.clone(),
-        )?;
+
+        spawn_event_pipe(&value.spawner, &surface, core.clone(), |e| panic!());
         Ok(Text {
             surface,
             core,

@@ -5,7 +5,7 @@ use wag::{
     async_handle_err,
     gui::{
         spawn_window_event_receiver, Background, BackgroundParams, Button, ButtonEvent,
-        ButtonParams, CellLimit, EventSource, LayerStack, LayerStackParams, Ribbon,
+        ButtonParams, CellLimit, LayerStack, LayerStackParams, Ribbon,
         RibbonOrientation, RibbonParams, SimpleButtonSkin, SimpleButtonSkinParams,
     },
     window::{
@@ -17,6 +17,8 @@ use windows::{
     Foundation::Numerics::Vector2,
     UI::{Colors, Composition::Compositor},
 };
+
+use async_event_streams::EventSource;
 
 // use ::windows_app::Microsoft::Windows::System::Power::*;
 

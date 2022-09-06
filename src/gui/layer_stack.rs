@@ -1,7 +1,12 @@
+use std::borrow::Cow;
+
+use async_event_streams_derive::EventSink;
 use async_std::sync::{Arc, RwLock};
 
-use super::{attach, detach, EventSink, Panel, PanelEvent};
-use async_event_streams::{EventBox, EventSource, EventStream, EventStreams};
+use super::{attach, detach, Panel, PanelEvent};
+use async_event_streams::{
+    EventBox, EventSink, EventSinkExt, EventSource, EventStream, EventStreams,
+};
 use async_trait::async_trait;
 
 use typed_builder::TypedBuilder;
@@ -11,6 +16,8 @@ struct Core {
     layers: Vec<Arc<dyn Panel>>,
 }
 
+#[derive(EventSink)]
+#[event_sink(event=PanelEvent)]
 pub struct LayerStack {
     container: ContainerVisual,
     core: RwLock<Core>,
@@ -44,7 +51,7 @@ impl LayerStack {
     ) -> crate::Result<()> {
         // TODO: run simultaneously
         for item in self.layers().await {
-            item.on_event(event, source.clone()).await?;
+            item.on_event_ref(event, source.clone()).await?;
         }
         Ok(())
     }
@@ -54,7 +61,7 @@ impl LayerStack {
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         if let Some(item) = self.layers().await.first_mut() {
-            item.on_event(event, source).await?;
+            item.on_event_ref(event, source).await?;
         }
         Ok(())
     }
@@ -147,14 +154,17 @@ impl EventSource<PanelEvent> for LayerStack {
 }
 
 #[async_trait]
-impl EventSink<PanelEvent> for LayerStack {
-    async fn on_event(
-        &self,
-        event: &PanelEvent,
+impl EventSinkExt<PanelEvent> for LayerStack {
+    type Error = crate::Error;
+    async fn on_event<'a>(
+        &'a self,
+        event: Cow<'a, PanelEvent>,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
-        self.translate_event(event, source.clone()).await?;
-        self.panel_events.send_event(event.clone(), source).await;
+        self.translate_event(event.as_ref(), source.clone()).await?;
+        self.panel_events
+            .send_event(event.into_owned(), source)
+            .await;
         Ok(())
     }
 }

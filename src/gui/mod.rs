@@ -95,28 +95,3 @@ where
         }
     }
 }
-
-#[async_trait]
-pub trait EventSink<EVT: Send + Sync + 'static> {
-    async fn on_event(&self, event: &EVT, source: Option<Arc<EventBox>>) -> crate::Result<()>;
-}
-
-pub fn create_event_pipe<
-    EVT: Send + Sync + Unpin + 'static,
-    SPAWNER: Spawn,
-    HANDLER: EventSink<EVT> + Send + Sync + 'static,
->(
-    spawner: SPAWNER,
-    source: EventStream<EVT>,
-    handler: HANDLER,
-) -> Result<(), SpawnError> {
-    let mut source = source;
-    spawner.spawn(async_handle_err(async move {
-        while let Some(event) = source.next().await {
-            let eventref = event.clone();
-            let eventref = &*eventref;
-            handler.on_event(eventref, event.into()).await?;
-        }
-        Ok(())
-    }))
-}

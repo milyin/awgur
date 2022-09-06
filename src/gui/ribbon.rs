@@ -1,5 +1,10 @@
-use super::{attach, is_translated_point_in_box, EventSink, Panel, PanelEvent};
-use async_event_streams::{EventBox, EventSource, EventStream, EventStreams};
+use std::borrow::Cow;
+
+use super::{attach, is_translated_point_in_box, Panel, PanelEvent};
+use async_event_streams::{
+    EventBox, EventSink, EventSinkExt, EventSource, EventStream, EventStreams,
+};
+use async_event_streams_derive::EventSink;
 use async_std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use typed_builder::TypedBuilder;
@@ -127,6 +132,8 @@ impl Core {
     }
 }
 
+#[derive(EventSink)]
+#[event_sink(event=PanelEvent)]
 pub struct Ribbon {
     compositor: Compositor,
     ribbon_container: ContainerVisual,
@@ -256,13 +263,14 @@ impl EventSource<PanelEvent> for Ribbon {
 }
 
 #[async_trait]
-impl EventSink<PanelEvent> for Ribbon {
-    async fn on_event(
-        &self,
-        event: &PanelEvent,
+impl EventSinkExt<PanelEvent> for Ribbon {
+    type Error = crate::Error;
+    async fn on_event<'a>(
+        &'a self,
+        event: Cow<'a, PanelEvent>,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
-        match event {
+        match event.as_ref() {
             PanelEvent::Resized(size) => {
                 self.translate_panel_event_resized(*size, source.clone())
                     .await
@@ -276,11 +284,13 @@ impl EventSink<PanelEvent> for Ribbon {
                     .await
             }
             _ => {
-                self.translate_panel_event_default(event, source.clone())
+                self.translate_panel_event_default(event.as_ref(), source.clone())
                     .await
             }
         }?;
-        self.panel_events.send_event(event.clone(), source).await;
+        self.panel_events
+            .send_event(event.into_owned(), source)
+            .await;
         Ok(())
     }
 }
@@ -294,7 +304,7 @@ impl Ribbon {
         // TODO: run simultaneosuly
         let cells = self.core.read().await.cells();
         for cell in cells {
-            cell.panel.on_event(event, source.clone()).await?;
+            cell.panel.on_event_ref(event, source.clone()).await?;
         }
         Ok(())
     }
@@ -310,7 +320,7 @@ impl Ribbon {
         for cell in cells {
             let size = cell.container.Size()?;
             cell.panel
-                .on_event(&PanelEvent::Resized(size), source.clone())
+                .on_event_owned(PanelEvent::Resized(size), source.clone())
                 .await?;
         }
         Ok(())
@@ -327,7 +337,7 @@ impl Ribbon {
         for cell in cells {
             let mouse_pos = cell.translate_point(mouse_pos)?;
             cell.panel
-                .on_event(&PanelEvent::CursorMoved(mouse_pos), source.clone())
+                .on_event_owned(PanelEvent::CursorMoved(mouse_pos), source.clone())
                 .await?;
         }
         Ok(())
@@ -346,8 +356,8 @@ impl Ribbon {
                 let mouse_pos = cell.translate_point(mouse_pos)?;
                 let in_slot = cell.is_translated_point_in_cell(mouse_pos)?;
                 cell.panel
-                    .on_event(
-                        &PanelEvent::MouseInput {
+                    .on_event_owned(
+                        PanelEvent::MouseInput {
                             in_slot,
                             state,
                             button,

@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use async_event_streams::{EventBox, EventSource, EventStream};
-use async_trait::async_trait;
+use async_event_streams::{EventSink, EventSource};
 use futures::{
     channel::mpsc::{channel, Sender},
     task::{Spawn, SpawnExt},
@@ -15,7 +14,7 @@ use winit::event::{ElementState, MouseButton, WindowEvent};
 
 use crate::async_handle_err;
 
-use super::{EventSink, IntoVector2};
+use super::IntoVector2;
 
 #[derive(Clone, Debug)]
 pub enum PanelEvent {
@@ -46,7 +45,9 @@ impl From<WindowEvent<'static>> for PanelEvent {
     }
 }
 
-pub trait Panel: Send + Sync + EventSource<PanelEvent> + EventSink<PanelEvent> {
+pub trait Panel:
+    Send + Sync + EventSource<PanelEvent> + EventSink<PanelEvent, Error = crate::Error>
+{
     ///
     /// The visual object provided to parental panel. Position and size of this object is
     /// under control of the parent (external panel where this panel is inserted into).
@@ -56,6 +57,16 @@ pub trait Panel: Send + Sync + EventSource<PanelEvent> + EventSink<PanelEvent> {
     fn outer_frame(&self) -> Visual;
     fn id(&self) -> usize;
 }
+
+impl<T: Panel> Panel for Arc<T> {
+    fn outer_frame(&self) -> Visual {
+        (**self).outer_frame()
+    }
+    fn id(&self) -> usize {
+        (**self).id()
+    }
+}
+
 pub fn attach<T: Panel + ?Sized>(container: &ContainerVisual, panel: &T) -> crate::Result<()> {
     container.Children()?.InsertAtTop(&panel.outer_frame())?;
     Ok(())
@@ -67,22 +78,6 @@ pub fn detach(panel: &impl Panel) -> crate::Result<()> {
         parent.Children()?.Remove(&visual)?;
     }
     Ok(())
-}
-
-#[async_trait]
-impl<EVT: Send + Sync + 'static, T: EventSink<EVT> + Send + Sync> EventSink<EVT> for Arc<T> {
-    async fn on_event(&self, event: &EVT, source: Option<Arc<EventBox>>) -> crate::Result<()> {
-        self.as_ref().on_event(event, source).await
-    }
-}
-
-#[async_trait]
-impl<EVT: Send + Sync + 'static, T: EventSink<EVT> + Send + Sync + ?Sized> EventSink<EVT>
-    for Box<T>
-{
-    async fn on_event(&self, event: &EVT, source: Option<Arc<EventBox>>) -> crate::Result<()> {
-        self.as_ref().on_event(event, source).await
-    }
 }
 
 pub fn spawn_window_event_receiver(
@@ -101,7 +96,7 @@ pub fn spawn_window_event_receiver(
                 PanelEvent::Resized(size) => container.SetSize(*size)?,
                 _ => (),
             };
-            panel.on_event(&panel_event, None).await?;
+            panel.on_event_owned(panel_event, None).await?;
         }
         Ok(())
     }))?;
