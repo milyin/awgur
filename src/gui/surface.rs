@@ -28,9 +28,9 @@ pub enum SurfaceEvent {
 #[event_sink(event=PanelEvent)]
 pub struct Surface {
     sprite_visual: SpriteVisual,
-    composition_graphic_device: CompositionGraphicsDevice,
+    _composition_graphic_device: CompositionGraphicsDevice,
     surface: CompositionDrawingSurface,
-    surface_brush: CompositionSurfaceBrush,
+    _surface_brush: CompositionSurfaceBrush,
     panel_events: EventStreams<PanelEvent>,
     surface_events: EventStreams<SurfaceEvent>,
     id: Arc<()>,
@@ -51,9 +51,9 @@ impl Surface {
         sprite_visual.SetBrush(&surface_brush)?;
         Ok(Self {
             sprite_visual,
-            composition_graphic_device,
+            _composition_graphic_device: composition_graphic_device,
             surface,
-            surface_brush,
+            _surface_brush: surface_brush,
             panel_events: EventStreams::new(),
             surface_events: EventStreams::new(),
             id: Arc::new(()),

@@ -2,7 +2,7 @@ use std::sync::{Arc, Weak};
 
 use futures::{executor::ThreadPool, StreamExt};
 use wag::{
-    async_handle_err,
+    handle_err,
     gui::{
         spawn_window_event_receiver, Background, BackgroundParams, Button, ButtonEvent,
         ButtonParams, CellLimit, LayerStack, LayerStackParams, Ribbon,
@@ -91,7 +91,7 @@ fn main() -> wag::Result<()> {
         Ok(())
     }
 
-    pool.spawn_ok(async_handle_err({
+    pool.spawn_ok(handle_err({
         let a = Arc::downgrade(&red_surface);
         let b = Arc::downgrade(&green_surface);
         let c = Arc::downgrade(&blue_surface);

@@ -26,7 +26,7 @@ use windows::{
     UI::Composition::{CompositionDrawingSurface, Compositor, Visual},
 };
 
-use crate::window::{draw, dwrite_factory, ToWide};
+use crate::{window::{draw, dwrite_factory, ToWide}, on_err};
 
 use super::{surface::SurfaceEvent, Panel, PanelEvent, Surface, SurfaceParams};
 
@@ -120,7 +120,7 @@ impl EventSinkExt<SurfaceEvent> for Core {
     async fn on_event<'a>(
         &'a self,
         event: Cow<'a, SurfaceEvent>,
-        source: Option<Arc<EventBox>>,
+        _: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         match event.as_ref() {
             SurfaceEvent::Redraw(size) => {
@@ -135,7 +135,7 @@ impl EventSinkExt<SurfaceEvent> for Core {
 #[event_sink(event=PanelEvent)]
 pub struct Text {
     surface: Arc<Surface>,
-    core: Arc<RwLock<Core>>,
+    _core: Arc<RwLock<Core>>,
     panel_events: EventStreams<PanelEvent>,
     id: Arc<()>,
 }
@@ -287,11 +287,10 @@ impl<T: Spawn> TryFrom<TextParams<T>> for Text {
             .build()
             .try_into()?;
         let core = Arc::new(RwLock::new(Core::new(surface.clone(), value.text)?));
-
-        spawn_event_pipe(&value.spawner, &surface, core.clone(), |e| panic!());
+        spawn_event_pipe(&value.spawner, &surface, core.clone(), on_err)?;
         Ok(Text {
             surface,
-            core,
+            _core: core,
             panel_events: EventStreams::new(),
             id: Arc::new(()),
         })

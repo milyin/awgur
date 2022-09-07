@@ -12,7 +12,7 @@ use windows::{
 };
 use winit::event::{ElementState, MouseButton, WindowEvent};
 
-use crate::async_handle_err;
+use crate::error::handle_err;
 
 use super::IntoVector2;
 
@@ -88,7 +88,7 @@ pub fn spawn_window_event_receiver(
     let (tx_event_channel, mut rx_event_channel) = channel::<WindowEvent<'static>>(1024 * 64);
     let panel = panel;
     attach(&container, &panel)?;
-    pool.spawn(async_handle_err(async move {
+    pool.spawn(handle_err(async move {
         while let Some(event) = rx_event_channel.next().await {
             let panel_event = event.into();
             match &panel_event {
