@@ -1,11 +1,16 @@
-use super::{is_translated_point_in_box, ArcPanel, EventSink, EventSource, Panel, PanelEvent};
-use async_event_streams::{EventBox, EventStream, EventStreams};
+use std::borrow::Cow;
+
+use super::{attach, is_translated_point_in_box, Panel, PanelEvent};
+use async_event_streams::{
+    EventBox, EventSink, EventSinkExt, EventSource, EventStream, EventStreams,
+};
+use async_event_streams_derive::EventSink;
 use async_std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use typed_builder::TypedBuilder;
 use windows::{
     Foundation::Numerics::{Vector2, Vector3},
-    UI::Composition::{Compositor, ContainerVisual},
+    UI::Composition::{Compositor, ContainerVisual, Visual},
 };
 use winit::event::{ElementState, MouseButton};
 
@@ -59,18 +64,22 @@ impl Default for CellLimit {
 
 #[derive(Clone)]
 pub struct Cell {
-    panel: Box<dyn ArcPanel>,
+    panel: Arc<dyn Panel>,
     container: ContainerVisual,
     limit: CellLimit,
 }
 
 impl Cell {
-    fn new(panel: impl ArcPanel, compositor: &Compositor, limit: CellLimit) -> crate::Result<Self> {
+    fn new(
+        panel: Arc<dyn Panel>,
+        compositor: &Compositor,
+        limit: CellLimit,
+    ) -> crate::Result<Self> {
         let panel = panel;
         let container = compositor.CreateContainerVisual()?;
-        panel.attach(container.clone())?;
+        attach(&container, &*panel)?;
         Ok(Self {
-            panel: panel.clone_box(),
+            panel: panel.into(),
             container,
             limit,
         })
@@ -123,11 +132,14 @@ impl Core {
     }
 }
 
+#[derive(EventSink)]
+#[event_sink(event=PanelEvent)]
 pub struct Ribbon {
     compositor: Compositor,
     ribbon_container: ContainerVisual,
     core: RwLock<Core>,
     panel_events: EventStreams<PanelEvent>,
+    id: Arc<()>,
 }
 
 #[derive(TypedBuilder)]
@@ -139,37 +151,51 @@ pub struct RibbonParams {
 }
 
 impl RibbonParams {
-    pub fn add_panel(self, panel: impl ArcPanel, limit: CellLimit) -> crate::Result<Self> {
+    pub fn add_panel(self, panel: Arc<dyn Panel>, limit: CellLimit) -> crate::Result<Self> {
         let mut this = self;
         this.cells.push(Cell::new(panel, &this.compositor, limit)?);
         Ok(this)
     }
-    pub fn create(self) -> crate::Result<Arc<Ribbon>> {
-        let ribbon_container = self.compositor.CreateContainerVisual()?;
-        for cell in &self.cells {
-            ribbon_container
-                .Children()?
-                .InsertAtTop(&cell.container)?;
+}
+
+impl TryFrom<RibbonParams> for Ribbon {
+    type Error = crate::Error;
+
+    fn try_from(value: RibbonParams) -> crate::Result<Self> {
+        let ribbon_container = value.compositor.CreateContainerVisual()?;
+        for cell in &value.cells {
+            ribbon_container.Children()?.InsertAtTop(&cell.container)?;
         }
         // ribbon_container.SetComment(HSTRING::from("RIBBON_CONTAINER"))?;
         let core = RwLock::new(Core {
-            orientation: self.orientation,
-            cells: self.cells,
+            orientation: value.orientation,
+            cells: value.cells,
             mouse_pos: None,
         });
-        Ok(Arc::new(Ribbon {
-            compositor: self.compositor,
+        Ok(Ribbon {
+            compositor: value.compositor,
             ribbon_container,
             core,
             panel_events: EventStreams::new(),
-        }))
+            id: Arc::new(()),
+        })
+    }
+}
+
+impl TryFrom<RibbonParams> for Arc<Ribbon> {
+    type Error = crate::Error;
+
+    fn try_from(value: RibbonParams) -> crate::Result<Self> {
+        Ok(Arc::new(value.try_into()?))
     }
 }
 
 impl Ribbon {
-    pub async fn add_panel(&self, panel: impl ArcPanel, limit: CellLimit) -> crate::Result<()> {
+    pub async fn add_panel(&self, panel: Arc<dyn Panel>, limit: CellLimit) -> crate::Result<()> {
         let cell = Cell::new(panel, &self.compositor, limit)?;
-        self.ribbon_container.Children()?.InsertAtTop(&cell.container)?;
+        self.ribbon_container
+            .Children()?
+            .InsertAtTop(&cell.container)?;
         self.core.write().await.cells.push(cell);
         self.resize_cells(self.ribbon_container.Size()?).await?;
         Ok(())
@@ -222,17 +248,11 @@ impl Ribbon {
 }
 
 impl Panel for Ribbon {
-    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
-        container
-            .Children()?
-            .InsertAtTop(&self.ribbon_container)?;
-        Ok(())
+    fn outer_frame(&self) -> Visual {
+        self.ribbon_container.clone().into()
     }
-    fn detach(&self) -> crate::Result<()> {
-        if let Ok(parent) = self.ribbon_container.Parent() {
-            parent.Children()?.Remove(&self.ribbon_container)?;
-        }
-        Ok(())
+    fn id(&self) -> usize {
+        Arc::as_ptr(&self.id) as usize
     }
 }
 
@@ -243,31 +263,34 @@ impl EventSource<PanelEvent> for Ribbon {
 }
 
 #[async_trait]
-impl EventSink<PanelEvent> for Ribbon {
-    async fn on_event(
-        &self,
-        event: PanelEvent,
+impl EventSinkExt<PanelEvent> for Ribbon {
+    type Error = crate::Error;
+    async fn on_event<'a>(
+        &'a self,
+        event: Cow<'a, PanelEvent>,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
-        match event {
+        match event.as_ref() {
             PanelEvent::Resized(size) => {
-                self.translate_panel_event_resized(size, source.clone())
+                self.translate_panel_event_resized(*size, source.clone())
                     .await
             }
             PanelEvent::MouseInput { state, button, .. } => {
-                self.translate_slot_event_mouse_input(state, button, source.clone())
+                self.translate_slot_event_mouse_input(*state, *button, source.clone())
                     .await
             }
             PanelEvent::CursorMoved(mouse_pos) => {
-                self.translate_slot_event_cursor_moved(mouse_pos, source.clone())
+                self.translate_slot_event_cursor_moved(*mouse_pos, source.clone())
                     .await
             }
             _ => {
-                self.translate_panel_event_default(event.clone(), source.clone())
+                self.translate_panel_event_default(event.as_ref(), source.clone())
                     .await
             }
         }?;
-        self.panel_events.send_event(event, source).await;
+        self.panel_events
+            .send_event(event.into_owned(), source)
+            .await;
         Ok(())
     }
 }
@@ -275,13 +298,13 @@ impl EventSink<PanelEvent> for Ribbon {
 impl Ribbon {
     async fn translate_panel_event_default(
         &self,
-        event: PanelEvent,
+        event: &PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         // TODO: run simultaneosuly
         let cells = self.core.read().await.cells();
         for cell in cells {
-            cell.panel.on_event(event.clone(), source.clone()).await?;
+            cell.panel.on_event_ref(event, source.clone()).await?;
         }
         Ok(())
     }
@@ -297,7 +320,7 @@ impl Ribbon {
         for cell in cells {
             let size = cell.container.Size()?;
             cell.panel
-                .on_event(PanelEvent::Resized(size), source.clone())
+                .on_event_owned(PanelEvent::Resized(size), source.clone())
                 .await?;
         }
         Ok(())
@@ -314,7 +337,7 @@ impl Ribbon {
         for cell in cells {
             let mouse_pos = cell.translate_point(mouse_pos)?;
             cell.panel
-                .on_event(PanelEvent::CursorMoved(mouse_pos), source.clone())
+                .on_event_owned(PanelEvent::CursorMoved(mouse_pos), source.clone())
                 .await?;
         }
         Ok(())
@@ -333,7 +356,7 @@ impl Ribbon {
                 let mouse_pos = cell.translate_point(mouse_pos)?;
                 let in_slot = cell.is_translated_point_in_cell(mouse_pos)?;
                 cell.panel
-                    .on_event(
+                    .on_event_owned(
                         PanelEvent::MouseInput {
                             in_slot,
                             state,

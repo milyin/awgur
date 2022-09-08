@@ -1,59 +1,77 @@
-use super::ArcPanel;
-use super::{
-    Background, BackgroundParams, EventSink, EventSource, LayerStack, LayerStackParams, Panel,
-    PanelEvent,
+use std::borrow::Cow;
+
+use super::{attach, Text, TextParams};
+use super::{Background, BackgroundParams, LayerStack, LayerStackParams, Panel, PanelEvent};
+use async_event_streams::{
+    EventBox, EventSink, EventSinkExt, EventSource, EventStream, EventStreams,
 };
-use async_event_streams::{EventBox, EventStream, EventStreams};
+use async_event_streams_derive::{self, EventSink};
 use async_std::sync::Arc;
 use async_std::sync::RwLock;
 use async_trait::async_trait;
+use futures::task::Spawn;
 use typed_builder::TypedBuilder;
+use windows::UI::Composition::Visual;
 use windows::UI::{
     Color, Colors,
     Composition::{Compositor, ContainerVisual},
 };
 use winit::event::{ElementState, MouseButton};
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub enum ButtonEvent {
     Press,
     Release(bool),
 }
 
 struct Core {
-    skin: Box<dyn ButtonSkin>,
+    skin: Arc<dyn ButtonSkin>,
     pressed: bool,
 }
 
+#[derive(EventSink)]
+#[event_sink(event=PanelEvent)]
 pub struct Button {
     container: ContainerVisual,
     core: RwLock<Core>,
     panel_events: EventStreams<PanelEvent>,
     button_events: EventStreams<ButtonEvent>,
+    id: Arc<()>,
 }
 
 #[derive(TypedBuilder)]
 pub struct ButtonParams {
     compositor: Compositor,
-    #[builder(setter(transform = |skin: impl ButtonSkin + 'static | Box::new(skin) as Box<dyn ButtonSkin>))]
-    skin: Box<dyn ButtonSkin>,
+    #[builder(setter(transform = |skin: impl ButtonSkin + 'static | Arc::new(skin) as Arc<dyn ButtonSkin>))]
+    skin: Arc<dyn ButtonSkin>,
 }
 
-impl ButtonParams {
-    pub fn create(self) -> crate::Result<Arc<Button>> {
-        let container = self.compositor.CreateContainerVisual()?;
-        let skin = self.skin;
-        skin.attach(container.clone())?;
+impl TryFrom<ButtonParams> for Button {
+    type Error = crate::Error;
+
+    fn try_from(value: ButtonParams) -> crate::Result<Self> {
+        let container = value.compositor.CreateContainerVisual()?;
+        let skin = value.skin;
+        attach(&container, &*skin)?;
         let core = RwLock::new(Core {
             skin,
             pressed: false,
         });
-        Ok(Arc::new(Button {
+        Ok(Button {
             container,
             core,
             panel_events: EventStreams::new(),
             button_events: EventStreams::new(),
-        }))
+            id: Arc::new(()),
+        })
+    }
+}
+
+impl TryFrom<ButtonParams> for Arc<Button> {
+    type Error = crate::Error;
+
+    fn try_from(value: ButtonParams) -> crate::Result<Self> {
+        Ok(Arc::new(value.try_into()?))
     }
 }
 
@@ -66,8 +84,8 @@ impl Core {
         self.pressed = false;
         pressed
     }
-    fn skin_panel(&self) -> Box<dyn ArcPanel> {
-        self.skin.clone_box()
+    fn skin_panel(&self) -> Arc<dyn ButtonSkin> {
+        self.skin.clone()
     }
 }
 
@@ -84,33 +102,37 @@ impl EventSource<PanelEvent> for Button {
 }
 
 #[async_trait]
-impl EventSink<PanelEvent> for Button {
-    async fn on_event(
-        &self,
-        event: PanelEvent,
+impl EventSinkExt<PanelEvent> for Button {
+    type Error = crate::Error;
+    async fn on_event<'a>(
+        &'a self,
+        event: Cow<'a, PanelEvent>,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         let skin = self.core.read().await.skin_panel();
-        skin.on_event(event.clone(), source.clone()).await?;
-        self.panel_events.send_event(event.clone(), source.clone()).await;
-
-        match event {
+        skin.on_event_ref(event.as_ref(), source.clone()).await?;
+        self.panel_events
+            .send_event(event.clone().into_owned(), source.clone())
+            .await;
+        match event.as_ref() {
             PanelEvent::MouseInput {
                 in_slot,
                 state,
                 button,
             } => {
-                if button == MouseButton::Left {
-                    if state == ElementState::Pressed {
-                        if in_slot {
+                if *button == MouseButton::Left {
+                    if *state == ElementState::Pressed {
+                        if *in_slot {
                             self.core.write().await.press();
-                            self.button_events.send_event(ButtonEvent::Press, source).await;
+                            self.button_events
+                                .send_event(ButtonEvent::Press, source)
+                                .await;
                         }
-                    } else if state == ElementState::Released {
+                    } else if *state == ElementState::Released {
                         let released = self.core.write().await.release();
                         if released {
                             self.button_events
-                                .send_event(ButtonEvent::Release(in_slot), source)
+                                .send_event(ButtonEvent::Release(*in_slot), source)
                                 .await;
                         }
                     }
@@ -123,57 +145,82 @@ impl EventSink<PanelEvent> for Button {
 }
 
 impl Panel for Button {
-    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
-        container.Children()?.InsertAtTop(&self.container)?;
-        Ok(())
+    fn outer_frame(&self) -> Visual {
+        self.container.clone().into()
     }
-    fn detach(&self) -> crate::Result<()> {
-        if let Ok(parent) = self.container.Parent() {
-            parent.Children()?.Remove(&self.container)?;
-        }
-        Ok(())
+    fn id(&self) -> usize {
+        Arc::as_ptr(&self.id) as usize
     }
 }
 
-pub trait ButtonSkin: ArcPanel + EventSink<ButtonEvent> {}
+pub trait ButtonSkin: Panel + EventSink<ButtonEvent, Error = crate::Error> {}
+impl<T: Panel + EventSink<ButtonEvent, Error = crate::Error>> ButtonSkin for T {}
 
+#[derive(EventSink)]
+#[event_sink(event=PanelEvent)]
+#[event_sink(event=ButtonEvent)]
 pub struct SimpleButtonSkin {
     layer_stack: LayerStack,
+    text: Arc<Text>,
     background: Arc<Background>,
     panel_events: EventStreams<PanelEvent>,
 }
 
 #[derive(TypedBuilder)]
-pub struct SimpleButtonSkinParams {
+pub struct SimpleButtonSkinParams<T: Spawn> {
     compositor: Compositor,
+    text: String,
     color: Color,
+    spawner: T,
 }
 
-impl SimpleButtonSkinParams {
-    pub fn create(self) -> crate::Result<Arc<SimpleButtonSkin>> {
-        let background = BackgroundParams::builder()
-            .color(self.color)
+impl<T: Spawn> TryFrom<SimpleButtonSkinParams<T>> for SimpleButtonSkin {
+    type Error = crate::Error;
+    fn try_from(value: SimpleButtonSkinParams<T>) -> crate::Result<Self> {
+        let background: Arc<Background> = BackgroundParams::builder()
+            .color(value.color)
             .round_corners(true)
-            .compositor(self.compositor.clone())
+            .compositor(value.compositor.clone())
             .build()
-            .create()?;
+            .try_into()?;
+        let text: Arc<Text> = TextParams::builder()
+            .compositor(value.compositor.clone())
+            .text(value.text)
+            .spawner(value.spawner)
+            .build()
+            .try_into()?;
         let layer_stack = LayerStackParams::builder()
-            .compositor(self.compositor)
+            .compositor(value.compositor.clone())
             .build()
             .push_panel(background.clone())
-            .create()?;
-        Ok(Arc::new(SimpleButtonSkin {
+            .push_panel(text.clone())
+            .try_into()?;
+        Ok(SimpleButtonSkin {
             layer_stack,
             background,
+            text,
             panel_events: EventStreams::new(),
-        }))
+        })
+    }
+}
+
+impl<T: Spawn> TryFrom<SimpleButtonSkinParams<T>> for Arc<SimpleButtonSkin> {
+    type Error = crate::Error;
+
+    fn try_from(value: SimpleButtonSkinParams<T>) -> crate::Result<Self> {
+        Ok(Arc::new(value.try_into()?))
     }
 }
 
 #[async_trait]
-impl EventSink<ButtonEvent> for SimpleButtonSkin {
-    async fn on_event(&self, event: ButtonEvent, _: Option<Arc<EventBox>>) -> crate::Result<()> {
-        match event {
+impl EventSinkExt<ButtonEvent> for SimpleButtonSkin {
+    type Error = crate::Error;
+    async fn on_event<'a>(
+        &'a self,
+        event: Cow<'a, ButtonEvent>,
+        _: Option<Arc<EventBox>>,
+    ) -> crate::Result<()> {
+        match event.as_ref() {
             ButtonEvent::Press => self.background.set_color(Colors::DarkMagenta()?).await?,
             ButtonEvent::Release(_) => self.background.set_color(Colors::Magenta()?).await?,
         }
@@ -182,10 +229,11 @@ impl EventSink<ButtonEvent> for SimpleButtonSkin {
 }
 
 #[async_trait]
-impl EventSink<PanelEvent> for SimpleButtonSkin {
-    async fn on_event(
-        &self,
-        event: PanelEvent,
+impl EventSinkExt<PanelEvent> for SimpleButtonSkin {
+    type Error = crate::Error;
+    async fn on_event<'a>(
+        &'a self,
+        event: Cow<'a, PanelEvent>,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         self.layer_stack.on_event(event, source).await
@@ -199,13 +247,10 @@ impl EventSource<PanelEvent> for SimpleButtonSkin {
 }
 
 impl Panel for SimpleButtonSkin {
-    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
-        self.layer_stack.attach(container)
+    fn outer_frame(&self) -> Visual {
+        self.layer_stack.outer_frame()
     }
-
-    fn detach(&self) -> crate::Result<()> {
-        self.layer_stack.detach()
+    fn id(&self) -> usize {
+        Arc::as_ptr(&self.text) as usize
     }
 }
-
-impl ButtonSkin for Arc<SimpleButtonSkin> {}

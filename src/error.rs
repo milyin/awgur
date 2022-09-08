@@ -34,6 +34,11 @@ impl From<std::io::Error> for Error {
     }
 }
 
-pub fn async_handle_err(future: impl Future<Output = Result<()>>) -> impl Future<Output = ()> {
-    async { (future.await).unwrap() }
+// Later this function will be able to call globally set user error handler
+pub fn on_err(e: crate::Error) {
+    panic!("{}", e);
+}
+
+pub fn handle_err(future: impl Future<Output = Result<()>>) -> impl Future<Output = ()> {
+    async { (future.await).unwrap_or_else(on_err) }
 }

@@ -1,4 +1,9 @@
-use async_event_streams::{EventBox, EventStream, EventStreams};
+use std::borrow::Cow;
+
+use async_event_streams::{
+    EventBox, EventSink, EventSinkExt, EventSource, EventStream, EventStreams,
+};
+use async_event_streams_derive::{self, EventSink};
 use async_std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use float_ord::FloatOrd;
@@ -7,11 +12,11 @@ use windows::{
     Foundation::Numerics::Vector2,
     UI::{
         Color,
-        Composition::{CompositionShape, Compositor, ContainerVisual, ShapeVisual},
+        Composition::{CompositionShape, Compositor, ContainerVisual, ShapeVisual, Visual},
     },
 };
 
-use super::{EventSink, EventSource, Panel, PanelEvent};
+use super::{Panel, PanelEvent};
 
 struct Core {
     round_corners: bool,
@@ -72,10 +77,13 @@ impl Core {
     }
 }
 
+#[derive(EventSink)]
+#[event_sink(event=PanelEvent)]
 pub struct Background {
     container: ContainerVisual,
     core: RwLock<Core>,
     panel_events: EventStreams<PanelEvent>,
+    id: Arc<()>,
 }
 
 #[derive(TypedBuilder)]
@@ -85,20 +93,31 @@ pub struct BackgroundParams {
     compositor: Compositor,
 }
 
-impl BackgroundParams {
-    pub fn create(self) -> crate::Result<Arc<Background>> {
-        let container = self.compositor.CreateShapeVisual()?;
+impl TryFrom<BackgroundParams> for Background {
+    type Error = crate::Error;
+
+    fn try_from(value: BackgroundParams) -> crate::Result<Self> {
+        let container = value.compositor.CreateShapeVisual()?;
         let core = RwLock::new(Core {
-            round_corners: self.round_corners,
-            color: self.color,
-            compositor: self.compositor,
+            round_corners: value.round_corners,
+            color: value.color,
+            compositor: value.compositor,
             container: container.clone(),
         });
-        Ok(Arc::new(Background {
+        Ok(Background {
             container: container.into(),
             core,
             panel_events: EventStreams::new(),
-        }))
+            id: Arc::new(()),
+        })
+    }
+}
+
+impl TryFrom<BackgroundParams> for Arc<Background> {
+    type Error = crate::Error;
+
+    fn try_from(value: BackgroundParams) -> crate::Result<Self> {
+        Ok(Arc::new(value.try_into()?))
     }
 }
 
@@ -114,15 +133,11 @@ impl Background {
 
 #[async_trait]
 impl Panel for Background {
-    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
-        container.Children()?.InsertAtTop(&self.container)?;
-        Ok(())
+    fn outer_frame(&self) -> Visual {
+        self.container.clone().into()
     }
-    fn detach(&self) -> crate::Result<()> {
-        if let Ok(parent) = self.container.Parent() {
-            parent.Children()?.Remove(&self.container)?;
-        }
-        Ok(())
+    fn id(&self) -> usize {
+        Arc::as_ptr(&self.id) as usize
     }
 }
 
@@ -133,16 +148,19 @@ impl EventSource<PanelEvent> for Background {
 }
 
 #[async_trait]
-impl EventSink<PanelEvent> for Background {
-    async fn on_event(
-        &self,
-        event: PanelEvent,
+impl EventSinkExt<PanelEvent> for Background {
+    type Error = crate::Error;
+    async fn on_event<'a>(
+        &'a self,
+        event: Cow<'a, PanelEvent>,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
-        if let PanelEvent::Resized(size) = &event {
+        if let PanelEvent::Resized(size) = event.as_ref() {
             self.core.write().await.resize(*size)?;
         }
-        self.panel_events.send_event(event, source).await;
+        self.panel_events
+            .send_event(event.into_owned(), source)
+            .await;
         Ok(())
     }
 }

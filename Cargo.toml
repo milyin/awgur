@@ -4,11 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-async_event_streams = "0.1.1"
+# async_event_streams = { path = "../async-event-streams" }
+async_event_streams = "0.1.4"
+async_event_streams_derive = "0.1.0"
 futures = "0.3.17"
 thiserror = "1.0"
 float-ord = "0.3.2"
-winit = "0.26.0"
+winit = "0.27.2"
 typed-builder = "0.10.0"
 async-trait = "0.1.52"
 async-std = "1.11.0"
@@ -25,6 +27,12 @@ features = [
   "UI_Composition_Desktop",
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
+  "Win32_Graphics_DirectWrite",
+  "Win32_Graphics_Direct2D",
+  "Win32_Graphics_Direct2D_Common",
+  "Win32_Graphics_Direct3D11",
+  "Win32_Graphics_Direct3D",
+  "Win32_Graphics_Dxgi",
   "Win32_System_LibraryLoader",
   "Win32_System_WinRT",
   "Win32_UI_WindowsAndMessaging",

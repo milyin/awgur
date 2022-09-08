@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 wag = { path = "../.." }
 futures = "0.3.21"
+# async_event_streams = { path = "../../../async-event-streams" }
+async_event_streams = "0.1.4"
 
 [dependencies.windows]
 version = "0.39.0"

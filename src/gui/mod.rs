@@ -3,20 +3,18 @@ mod button;
 mod layer_stack;
 mod panel;
 mod ribbon;
-// mod text;
+mod surface;
+mod text;
 
-use std::sync::Arc;
-
-use async_event_streams::{EventBox, EventStream};
-use async_trait::async_trait;
 pub use background::{Background, BackgroundParams};
 pub use button::{
     Button, ButtonEvent, ButtonParams, ButtonSkin, SimpleButtonSkin, SimpleButtonSkinParams,
 };
 pub use layer_stack::{LayerStack, LayerStackParams};
-pub use panel::{spawn_window_event_receiver, ArcPanel, Panel, PanelEvent};
+pub use panel::{attach, detach, spawn_window_event_receiver, Panel, PanelEvent};
 pub use ribbon::{CellLimit, Ribbon, RibbonOrientation, RibbonParams};
-// pub use text::{Text, WText};
+pub use surface::{Surface, SurfaceParams};
+pub use text::{Text, TextParams};
 
 use windows::Foundation::Numerics::Vector2;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
@@ -88,13 +86,4 @@ where
             height: v.Y as u32,
         }
     }
-}
-
-pub trait EventSource<EVT: Send + Sync + 'static> {
-    fn event_stream(&self) -> EventStream<EVT>;
-}
-
-#[async_trait]
-pub trait EventSink<EVT: Send + Sync + 'static> {
-    async fn on_event(&self, event: EVT, source: Option<Arc<EventBox>>) -> crate::Result<()>;
 }

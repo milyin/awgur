@@ -1,70 +1,78 @@
+use std::borrow::Cow;
+
+use async_event_streams_derive::EventSink;
 use async_std::sync::{Arc, RwLock};
 
-use super::{ArcPanel, EventSink, EventSource, Panel, PanelEvent};
-use async_event_streams::{EventBox, EventStream, EventStreams};
+use super::{attach, detach, Panel, PanelEvent};
+use async_event_streams::{
+    EventBox, EventSink, EventSinkExt, EventSource, EventStream, EventStreams,
+};
 use async_trait::async_trait;
 
 use typed_builder::TypedBuilder;
-use windows::UI::Composition::{Compositor, ContainerVisual};
+use windows::UI::Composition::{Compositor, ContainerVisual, Visual};
 
 struct Core {
-    layers: Vec<Box<dyn ArcPanel>>,
+    layers: Vec<Arc<dyn Panel>>,
 }
 
+#[derive(EventSink)]
+#[event_sink(event=PanelEvent)]
 pub struct LayerStack {
     container: ContainerVisual,
     core: RwLock<Core>,
     panel_events: EventStreams<PanelEvent>,
+    id: Arc<()>,
 }
 
 impl LayerStack {
-    async fn layers(&self) -> Vec<Box<dyn ArcPanel>> {
+    async fn layers(&self) -> Vec<Arc<dyn Panel>> {
         self.core.read().await.layers.clone()
     }
 
-    pub async fn push_panel(&mut self, panel: impl ArcPanel) -> crate::Result<()> {
-        panel.attach(self.container.clone())?;
-        self.core.write().await.layers.push(panel.clone_box());
+    pub async fn push_panel(&mut self, panel: Arc<dyn Panel>) -> crate::Result<()> {
+        attach(&self.container, &*panel)?;
+        self.core.write().await.layers.push(panel);
         Ok(())
     }
 
-    pub async fn remove_panel(&mut self, panel: impl ArcPanel) -> crate::Result<()> {
+    pub async fn remove_panel(&mut self, panel: impl Panel) -> crate::Result<()> {
         let mut core = self.core.write().await;
         if let Some(index) = core.layers.iter().position(|v| v.id() == panel.id()) {
-            panel.detach()?;
+            detach(&panel)?;
             core.layers.remove(index);
         }
         Ok(())
     }
     async fn translate_event_to_all_layers(
         &self,
-        event: PanelEvent,
+        event: &PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         // TODO: run simultaneously
         for item in self.layers().await {
-            item.on_event(event.clone(), source.clone()).await?;
+            item.on_event_ref(event, source.clone()).await?;
         }
         Ok(())
     }
     async fn translate_event_to_top_layer(
         &self,
-        event: PanelEvent,
+        event: &PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         if let Some(item) = self.layers().await.first_mut() {
-            item.on_event(event, source).await?;
+            item.on_event_ref(event, source).await?;
         }
         Ok(())
     }
     async fn translate_event(
         &self,
-        event: PanelEvent,
+        event: &PanelEvent,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
         match event {
             PanelEvent::Resized(size) => {
-                self.container.SetSize(size)?;
+                self.container.SetSize(*size)?;
                 self.translate_event_to_all_layers(event, source).await
             }
             PanelEvent::MouseInput { .. } => self.translate_event_to_top_layer(event, source).await,
@@ -93,19 +101,23 @@ impl LayerStack {
 pub struct LayerStackParams {
     compositor: Compositor,
     #[builder(default)]
-    layers: Vec<Box<dyn ArcPanel>>,
+    layers: Vec<Arc<dyn Panel>>,
 }
-
 impl LayerStackParams {
-    pub fn push_panel(mut self, panel: impl ArcPanel) -> Self {
-        self.layers.push(panel.clone_box());
+    pub fn push_panel(mut self, panel: Arc<dyn Panel>) -> Self {
+        self.layers.push(panel);
         self
     }
-    pub fn create(self) -> crate::Result<LayerStack> {
-        let mut layers = self.layers;
-        let container = self.compositor.CreateContainerVisual()?;
+}
+
+impl TryFrom<LayerStackParams> for LayerStack {
+    type Error = crate::Error;
+
+    fn try_from(value: LayerStackParams) -> crate::Result<Self> {
+        let mut layers = value.layers;
+        let container = value.compositor.CreateContainerVisual()?;
         for layer in &mut layers {
-            layer.attach(container.clone())?;
+            attach(&container, &**layer)?;
         }
         let core = RwLock::new(Core { layers });
         // container.SetComment(HSTRING::from("LAYER_STACK"))?;
@@ -113,20 +125,25 @@ impl LayerStackParams {
             container,
             core,
             panel_events: EventStreams::new(),
+            id: Arc::new(()),
         })
     }
 }
 
-impl Panel for LayerStack {
-    fn attach(&self, container: ContainerVisual) -> crate::Result<()> {
-        container.Children()?.InsertAtTop(&self.container)?;
-        Ok(())
+impl TryFrom<LayerStackParams> for Arc<LayerStack> {
+    type Error = crate::Error;
+
+    fn try_from(value: LayerStackParams) -> crate::Result<Self> {
+        Ok(Arc::new(value.try_into()?))
     }
-    fn detach(&self) -> crate::Result<()> {
-        if let Ok(parent) = self.container.Parent() {
-            parent.Children()?.Remove(&self.container)?;
-        }
-        Ok(())
+}
+
+impl Panel for LayerStack {
+    fn outer_frame(&self) -> Visual {
+        self.container.clone().into()
+    }
+    fn id(&self) -> usize {
+        Arc::as_ptr(&self.id) as usize
     }
 }
 
@@ -137,14 +154,17 @@ impl EventSource<PanelEvent> for LayerStack {
 }
 
 #[async_trait]
-impl EventSink<PanelEvent> for LayerStack {
-    async fn on_event(
-        &self,
-        event: PanelEvent,
+impl EventSinkExt<PanelEvent> for LayerStack {
+    type Error = crate::Error;
+    async fn on_event<'a>(
+        &'a self,
+        event: Cow<'a, PanelEvent>,
         source: Option<Arc<EventBox>>,
     ) -> crate::Result<()> {
-        self.translate_event(event.clone(), source.clone()).await?;
-        self.panel_events.send_event(event, source).await;
+        self.translate_event(event.as_ref(), source.clone()).await?;
+        self.panel_events
+            .send_event(event.into_owned(), source)
+            .await;
         Ok(())
     }
 }
