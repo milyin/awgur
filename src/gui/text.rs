@@ -26,7 +26,10 @@ use windows::{
     UI::Composition::{CompositionDrawingSurface, Compositor, Visual},
 };
 
-use crate::{window::{draw, dwrite_factory, ToWide}, on_err};
+use crate::{
+    on_err,
+    window::{draw, dwrite_factory, ToWide},
+};
 
 use super::{surface::SurfaceEvent, Panel, PanelEvent, Surface, SurfaceParams};
 
@@ -65,9 +68,9 @@ fn redraw(size: Vector2, surface: &CompositionDrawingSurface, text: &str) -> cra
 
         let clearcolor = D2D1_COLOR_F {
             r: 0.,
-            g: 30.,
-            b: 30.,
-            a: 255.,
+            g: 0.,
+            b: 0.,
+            a: 0.,
         };
         let text_color = D2D1_COLOR_F {
             r: 0.,

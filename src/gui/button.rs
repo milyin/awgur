@@ -18,7 +18,7 @@ use windows::UI::{
 };
 use winit::event::{ElementState, MouseButton};
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum ButtonEvent {
     Press,
     Release(bool),
@@ -27,6 +27,7 @@ pub enum ButtonEvent {
 struct Core {
     skin: Arc<dyn ButtonSkin>,
     pressed: bool,
+    button_events: Arc<EventStreams<ButtonEvent>>,
 }
 
 #[derive(EventSink)]
@@ -35,7 +36,7 @@ pub struct Button {
     container: ContainerVisual,
     core: RwLock<Core>,
     panel_events: EventStreams<PanelEvent>,
-    button_events: EventStreams<ButtonEvent>,
+    button_events: Arc<EventStreams<ButtonEvent>>,
     id: Arc<()>,
 }
 
@@ -53,15 +54,17 @@ impl TryFrom<ButtonParams> for Button {
         let container = value.compositor.CreateContainerVisual()?;
         let skin = value.skin;
         attach(&container, &*skin)?;
+        let button_events = Arc::new(EventStreams::new());
         let core = RwLock::new(Core {
             skin,
             pressed: false,
+            button_events: button_events.clone(),
         });
         Ok(Button {
             container,
             core,
             panel_events: EventStreams::new(),
-            button_events: EventStreams::new(),
+            button_events,
             id: Arc::new(()),
         })
     }
@@ -76,13 +79,22 @@ impl TryFrom<ButtonParams> for Arc<Button> {
 }
 
 impl Core {
-    fn press(&mut self) {
+    async fn press(&mut self, source: Option<Arc<EventBox>>) -> crate::Result<()> {
         self.pressed = true;
+        let event = ButtonEvent::Press;
+        self.skin.on_event_ref(&event, source.clone()).await?;
+        self.button_events.send_event(event, source).await;
+        Ok(())
     }
-    fn release(&mut self) -> bool {
-        let pressed = self.pressed;
+    async fn release(&mut self, in_slot: bool, source: Option<Arc<EventBox>>) -> crate::Result<()> {
         self.pressed = false;
-        pressed
+        let event = ButtonEvent::Release(in_slot);
+        self.skin.on_event_ref(&event, source.clone()).await?;
+        self.button_events.send_event(event, source).await;
+        Ok(())
+    }
+    fn is_pressed(&self) -> bool {
+        self.pressed
     }
     fn skin_panel(&self) -> Arc<dyn ButtonSkin> {
         self.skin.clone()
@@ -123,17 +135,15 @@ impl EventSinkExt<PanelEvent> for Button {
                 if *button == MouseButton::Left {
                     if *state == ElementState::Pressed {
                         if *in_slot {
-                            self.core.write().await.press();
-                            self.button_events
-                                .send_event(ButtonEvent::Press, source)
-                                .await;
+                            self.core.write().await.press(source.clone()).await?;
                         }
                     } else if *state == ElementState::Released {
-                        let released = self.core.write().await.release();
-                        if released {
-                            self.button_events
-                                .send_event(ButtonEvent::Release(*in_slot), source)
-                                .await;
+                        if self.core.read().await.is_pressed() {
+                            self.core
+                                .write()
+                                .await
+                                .release(*in_slot, source.clone())
+                                .await?;
                         }
                     }
                 }
