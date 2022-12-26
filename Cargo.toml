@@ -11,12 +11,12 @@ futures = "0.3.17"
 thiserror = "1.0"
 float-ord = "0.3.2"
 winit = "0.27.2"
-typed-builder = "0.10.0"
+typed-builder = "0.11.0"
 async-trait = "0.1.52"
 async-std = "1.11.0"
 
 [dependencies.windows]
-version = "0.39.0"
+version = "0.43.0"
 features = [
   "Foundation_Collections",
   "Foundation_Numerics",

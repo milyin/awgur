@@ -29,7 +29,7 @@ thread_local! {
 
 fn create_dwrite_factory() -> windows::core::Result<IDWriteFactory> {
     let dwrite_factory =
-        unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, &IDWriteFactory::IID) }?;
+        unsafe { DWriteCreateFactory::<IDWriteFactory>(DWRITE_FACTORY_TYPE_SHARED) }?;
     Ok(dwrite_factory.cast()?)
 }
 
@@ -46,11 +46,11 @@ fn create_d3d11_device() -> windows::core::Result<ID3D11Device> {
                 driver_type,
                 HINSTANCE::default(),
                 D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-                &[],
+                None,
                 D3D11_SDK_VERSION,
-                &mut device,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                Some(&mut device),
+                None,
+                None,
             )
         }?;
         Ok(device.unwrap())
@@ -73,7 +73,7 @@ fn create_d2d1_device() -> Result<ID2D1Device, windows::core::Error> {
     let dxdevice: IDXGIDevice = D3D11_DEVICE.with(|v| v.clone())?.cast()?;
     let options = D2D1_FACTORY_OPTIONS::default();
     let factory: ID2D1Factory1 =
-        unsafe { D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &options) }?;
+        unsafe { D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, Some(&options)) }?;
     let d2device = unsafe { factory.CreateDevice(&dxdevice) }?;
     Ok(d2device)
 }
@@ -114,7 +114,7 @@ pub fn draw<F: Fn(ID2D1DeviceContext, POINT) -> crate::Result<()>>(
     let mut updateoffset = POINT { x: 0, y: 0 };
     let surface_interop: ICompositionDrawingSurfaceInterop = surface.cast()?;
     let context: Option<ID2D1DeviceContext> = check_for_device_removed(unsafe {
-        surface_interop.BeginDraw(std::ptr::null(), &mut updateoffset)
+        surface_interop.BeginDraw(None, &mut updateoffset)
     })?;
     if let Some(context) = context {
         f(context, updateoffset)?;

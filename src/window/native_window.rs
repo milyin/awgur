@@ -103,7 +103,7 @@ impl Window {
                 HWND::default(),
                 HMENU::default(),
                 h_instance,
-                result.as_mut() as *mut _ as _,
+                Some(result.as_mut() as *mut _ as _),
             )
         };
 

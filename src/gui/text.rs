@@ -82,9 +82,9 @@ fn redraw(size: Vector2, surface: &CompositionDrawingSurface, text: &str) -> cra
             opacity: 1.,
             transform: Matrix3x2::identity(),
         };
-        unsafe { context.Clear(&clearcolor) };
+        unsafe { context.Clear(Some(&clearcolor)) };
         let text_brush =
-            unsafe { context.CreateSolidColorBrush(&text_color, &text_brush_properties) }?;
+            unsafe { context.CreateSolidColorBrush(&text_color, Some(&text_brush_properties)) }?;
         unsafe {
             context.DrawText(
                 text.to_wide().0.as_slice(),
